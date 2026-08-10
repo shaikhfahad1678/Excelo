@@ -97,6 +97,26 @@ class StatementService:
         except Exception as e:
             logger.warning(f"Could not save card to disk: {e}")
 
+    def save_result_to_disk(self, file_id: str, result: Dict[str, Any]):
+        """Persist extraction result to disk so it survives process restarts."""
+        try:
+            result_path = os.path.join(self.upload_dir, f"{file_id}.result.json")
+            with open(result_path, "w", encoding="utf-8") as f:
+                json.dump(result, f)
+        except Exception as e:
+            logger.warning(f"Could not save result to disk: {e}")
+
+    def load_result_from_disk(self, file_id: str) -> Optional[Dict[str, Any]]:
+        """Load extraction result from disk if not in memory."""
+        result_path = os.path.join(self.upload_dir, f"{file_id}.result.json")
+        if os.path.exists(result_path):
+            try:
+                with open(result_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"Could not load result from disk: {e}")
+        return None
+
     def get_card(self, file_id: str) -> Optional[Dict[str, Any]]:
         if file_id in self.file_cards:
             return self.file_cards[file_id]
@@ -312,6 +332,7 @@ class StatementService:
         }
 
         self.extraction_results[file_id] = result
+        self.save_result_to_disk(file_id, result)
 
         # Log process entry
         log_entry = {
@@ -350,13 +371,20 @@ class StatementService:
         return self.extract_file(file_id, engine_override=preferred_engine)
 
     def generate_export(self, file_ids: List[str], export_format: str = "xlsx") -> str:
-        successful_results = []
+        exportable_results = []
         for fid in file_ids:
-            if fid in self.extraction_results and self.extraction_results[fid]["success"]:
-                successful_results.append(self.extraction_results[fid])
+            # Prefer in-memory, then fall back to disk
+            result = self.extraction_results.get(fid) or self.load_result_from_disk(fid)
+            if result:
+                # Cache back into memory if restored from disk
+                if fid not in self.extraction_results:
+                    self.extraction_results[fid] = result
+                # Export if transactions exist (allow partial/failsafe results too)
+                if result.get("transactions"):
+                    exportable_results.append(result)
 
-        if not successful_results:
-            raise ValueError("No extracted data available for export.")
+        if not exportable_results:
+            raise ValueError("No extracted data available for export. Please run extraction first.")
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"Excelo_Export_{timestamp}.{export_format}"
@@ -364,12 +392,12 @@ class StatementService:
 
         if export_format == "csv":
             all_txs = []
-            for res in successful_results:
+            for res in exportable_results:
                 all_txs.extend(res["transactions"])
             generate_csv(all_txs, filepath)
         else:
             sheet_map = {}
-            for res in successful_results:
+            for res in exportable_results:
                 fname_clean = res["filename"][:25].replace(".pdf", "")
                 sheet_map[fname_clean] = res["transactions"]
             generate_excel_workbook(sheet_map, filepath)
