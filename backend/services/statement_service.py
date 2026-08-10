@@ -9,7 +9,7 @@ import tempfile
 import json
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-from backend.extractors.pdf_classifier import classify_pdf_type
+from backend.extractors.pdf_classifier import classify_pdf_type, TYPE_DIGITAL
 from backend.extractors.candidate_extractors import (
     run_camelot_lattice,
     run_camelot_stream,
@@ -149,20 +149,21 @@ class StatementService:
         file_size_kb = round(file_size / 1024, 1)
 
         pdf_type, meta = classify_pdf_type(file_path)
+        is_digital = pdf_type == TYPE_DIGITAL
 
         card = {
             "id": file_id,
             "filename": filename,
             "file_path": file_path,
             "pdf_type": pdf_type,
-            "pages": 1,
+            "pages": meta.get("total_pages", 1),
             "file_size": f"{file_size_kb} KB",
-            "status": "Ready",
+            "status": "Ready" if is_digital else "Failed",
             "extraction_method": "Auto Multi-Engine Pipeline",
             "progress": 0,
             "confidence_score": 0.0,
-            "validation_status": "Pending",
-            "detect_msg": f"Statement classified as {pdf_type}",
+            "validation_status": "Pending" if is_digital else "Errors",
+            "detect_msg": f"Statement classified as {pdf_type}" if is_digital else "Failed: Noisy or scanned non-digital PDF cannot be parsed.",
             "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
 
@@ -187,6 +188,28 @@ class StatementService:
         self.save_card_to_disk(card)
         pdf_path = card["file_path"]
         start_time = time.time()
+
+        pdf_type, meta = classify_pdf_type(pdf_path)
+        if pdf_type != TYPE_DIGITAL:
+            card["status"] = "Failed"
+            card["progress"] = 100
+            card["validation_status"] = "Errors"
+            card["detect_msg"] = "Failed: Noisy or scanned non-digital PDF cannot be parsed."
+            self.save_card_to_disk(card)
+            return {
+                "file_id": file_id,
+                "filename": card["filename"],
+                "pdf_type": pdf_type,
+                "success": False,
+                "engine_used": "None",
+                "processing_time": 0.05,
+                "confidence_score": 0.0,
+                "failsafe_warning": "Failed: Noisy or scanned non-digital PDF cannot be parsed.",
+                "error": "Failed: Noisy or scanned non-digital PDF cannot be parsed.",
+                "transactions": [],
+                "summary": {"total_count": 0, "pass_count": 0, "failed_count": 0, "is_valid": False},
+                "diagnostics": {"selected_method": "None", "selection_reason": "Failed: Noisy or scanned non-digital PDF cannot be parsed."}
+            }
 
         selected_engine = engine_override or "Auto Multi-Engine Pipeline"
 

@@ -57,6 +57,27 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
     };
   }, []);
 
+  // Auto-select active file automatically so analysis is displayed immediately
+  useEffect(() => {
+    if (files.length > 0) {
+      if (!selectedFileId || !files.some((f) => f.id === selectedFileId)) {
+        setSelectedFileId(files[files.length - 1].id);
+      }
+    } else {
+      setSelectedFileId(null);
+    }
+  }, [files, selectedFileId]);
+
+  useEffect(() => {
+    const fileIdsWithResults = Object.keys(results);
+    if (fileIdsWithResults.length > 0) {
+      const latestResultId = fileIdsWithResults[fileIdsWithResults.length - 1];
+      if (files.some((f) => f.id === latestResultId)) {
+        setSelectedFileId(latestResultId);
+      }
+    }
+  }, [results, files]);
+
   // Drag and drop handlers
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
@@ -242,7 +263,7 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
         <div className="space-y-4">
           <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider px-1">
             <span>Uploaded Workspace Documents ({files.length})</span>
-            <span>Select card to view analysis</span>
+            <span>Active Statement Analysis</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
