@@ -168,9 +168,9 @@ def get_file_status(file_id: str):
     GET /files/{file_id}/status
     Fetches live progress and status messages during extraction.
     """
-    card = statement_service.file_cards.get(file_id)
+    card = statement_service.get_card(file_id)
     if not card:
-        return {"status": "not_found", "progress": 0, "detect_msg": ""}
+        return {"status": "not_found", "progress": 100, "detect_msg": "Processing"}
     return {
         "status": "success",
         "progress": card.get("progress", 0),

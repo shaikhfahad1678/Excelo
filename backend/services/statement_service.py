@@ -6,6 +6,7 @@ import os
 import time
 import uuid
 import tempfile
+import json
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from backend.extractors.pdf_classifier import classify_pdf_type
@@ -65,19 +66,76 @@ class StatementService:
             logger.error(f"Error cleaning upload directory: {e}")
 
     def delete_file(self, file_id: str) -> bool:
+        card = self.get_card(file_id)
         if file_id in self.file_cards:
-            card = self.file_cards.pop(file_id)
-            file_path = card.get("file_path")
-            if file_path and os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                    logger.info(f"Deleted uploaded file from disk: {file_path}")
-                except Exception as e:
-                    logger.error(f"Error deleting file {file_path}: {e}")
-            if file_id in self.extraction_results:
-                del self.extraction_results[file_id]
-            return True
-        return False
+            self.file_cards.pop(file_id)
+        
+        json_path = os.path.join(self.upload_dir, f"{file_id}.json")
+        if os.path.exists(json_path):
+            try:
+                os.remove(json_path)
+            except Exception as e:
+                logger.error(f"Error deleting card json {json_path}: {e}")
+
+        file_path = card.get("file_path") if card else None
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                logger.info(f"Deleted uploaded file from disk: {file_path}")
+            except Exception as e:
+                logger.error(f"Error deleting file {file_path}: {e}")
+        
+        if file_id in self.extraction_results:
+            del self.extraction_results[file_id]
+        return True
+
+    def save_card_to_disk(self, card: Dict[str, Any]):
+        try:
+            json_path = os.path.join(self.upload_dir, f"{card['id']}.json")
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(card, f)
+        except Exception as e:
+            logger.warning(f"Could not save card to disk: {e}")
+
+    def get_card(self, file_id: str) -> Optional[Dict[str, Any]]:
+        if file_id in self.file_cards:
+            return self.file_cards[file_id]
+
+        json_path = os.path.join(self.upload_dir, f"{file_id}.json")
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    card = json.load(f)
+                    self.file_cards[file_id] = card
+                    return card
+            except Exception as e:
+                logger.warning(f"Could not load card from disk: {e}")
+
+        if os.path.exists(self.upload_dir):
+            for fname in os.listdir(self.upload_dir):
+                if fname.startswith(f"{file_id}_") and fname.endswith(".pdf"):
+                    pdf_path = os.path.join(self.upload_dir, fname)
+                    orig_filename = fname[len(file_id) + 1:]
+                    pdf_type, meta = classify_pdf_type(pdf_path)
+                    card = {
+                        "id": file_id,
+                        "filename": orig_filename,
+                        "file_path": pdf_path,
+                        "pdf_type": pdf_type,
+                        "pages": 1,
+                        "file_size": "PDF",
+                        "status": "Ready",
+                        "extraction_method": "Auto Multi-Engine Pipeline",
+                        "progress": 0,
+                        "confidence_score": 0.0,
+                        "validation_status": "Pending",
+                        "detect_msg": f"Statement classified as {pdf_type}",
+                        "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    self.file_cards[file_id] = card
+                    self.save_card_to_disk(card)
+                    return card
+        return None
 
     def register_file(self, filename: str, content: bytes) -> Dict[str, Any]:
         file_id = str(uuid.uuid4())[:8]
@@ -109,15 +167,24 @@ class StatementService:
         }
 
         self.file_cards[file_id] = card
+        self.save_card_to_disk(card)
         return card
 
     def extract_file(self, file_id: str, engine_override: Optional[str] = None) -> Dict[str, Any]:
-        if file_id not in self.file_cards:
-            raise KeyError(f"File ID {file_id} not found in workspace.")
+        card = self.get_card(file_id)
+        if not card:
+            return {
+                "file_id": file_id,
+                "filename": file_id,
+                "success": False,
+                "error": "File session expired or not found on serverless container. Please re-upload PDF.",
+                "transactions": [],
+                "summary": {}
+            }
 
-        card = self.file_cards[file_id]
         card["status"] = "Extracting"
         card["progress"] = 30
+        self.save_card_to_disk(card)
         pdf_path = card["file_path"]
         start_time = time.time()
 
