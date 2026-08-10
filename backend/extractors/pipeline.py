@@ -18,7 +18,8 @@ from backend.extractors.candidate_extractors import (
     run_pdfplumber_tables,
     run_pdfplumber_words,
     run_tabula,
-    run_noisy_digital_extractor
+    run_noisy_digital_extractor,
+    run_pypdf_fast_lines
 )
 from backend.validators.strict_validator import validate_and_enrich_transactions
 from backend.utils.logger import logger
@@ -74,6 +75,7 @@ def execute_intelligent_pipeline(pdf_path: str) -> Tuple[List[Dict[str, Any]], s
         return [], "None", diagnostics
 
     candidate_sequence = [
+        ("Fast PyPDF Line Extractor", run_pypdf_fast_lines),
         ("pdfplumber Tables", run_pdfplumber_tables),
         ("pdfplumber Words (Spatial)", run_pdfplumber_words),
         ("Noisy Digital Extractor", run_noisy_digital_extractor)

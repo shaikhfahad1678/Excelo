@@ -84,6 +84,24 @@ def run_noisy_digital_extractor(pdf_path: str) -> List[Dict[str, Any]]:
         logger.debug(f"Noisy digital extractor failed on {pdf_path}: {e}")
         return []
 
+def run_pypdf_fast_lines(pdf_path: str) -> List[Dict[str, Any]]:
+    rows = []
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(pdf_path)
+        for page in reader.pages:
+            text = page.extract_text() or ""
+            lines = text.splitlines()
+            for line in lines:
+                parts = [p.strip() for p in line.split("  ") if p.strip()]
+                if parts:
+                    rows.append(parts)
+        return clean_and_normalize_table(rows)
+    except Exception as e:
+        logger.debug(f"pypdf fast lines failed on {pdf_path}: {e}")
+        return []
+
+
 
 
 
