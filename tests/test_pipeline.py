@@ -40,3 +40,17 @@ def test_excel_generation(tmp_path):
     txs = [{"Date": "01/08/2026", "Description": "Test Tx", "Debit": 10.0, "Credit": None, "Balance": 90.0}]
     generated = generate_excel_workbook({"Sheet1": txs}, out_file)
     assert os.path.exists(generated)
+
+def test_statement_service_export():
+    from backend.services.statement_service import statement_service
+    file_id = "test_fid_123"
+    statement_service.extraction_results[file_id] = {
+        "success": True,
+        "filename": "sample_statement.pdf",
+        "transactions": [{"Date": "01/08/2026", "Description": "Test Tx", "Debit": 10.0, "Credit": None, "Balance": 90.0}]
+    }
+    filename = statement_service.generate_export([file_id], export_format="xlsx")
+    assert not os.path.isabs(filename)
+    assert filename.endswith(".xlsx")
+    assert os.path.exists(os.path.join(statement_service.export_dir, filename))
+

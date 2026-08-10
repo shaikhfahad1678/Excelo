@@ -131,7 +131,8 @@ def generate_excel_endpoint(req: GenerateExcelRequest):
     Generates Excel or CSV workbook.
     """
     try:
-        export_filename = statement_service.generate_export(req.file_ids, export_format=req.format or "xlsx")
+        export_path_or_name = statement_service.generate_export(req.file_ids, export_format=req.format or "xlsx")
+        export_filename = os.path.basename(export_path_or_name)
         download_url = f"/api/download/{export_filename}"
         return {"status": "success", "download_url": download_url, "filename": export_filename}
     except Exception as e:
@@ -139,12 +140,13 @@ def generate_excel_endpoint(req: GenerateExcelRequest):
 
 @app.get("/api/download/{filename}")
 def download_file(filename: str):
-    filepath = os.path.join(statement_service.export_dir, filename)
+    clean_filename = os.path.basename(filename)
+    filepath = os.path.join(statement_service.export_dir, clean_filename)
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Requested file not found.")
 
-    media_type = "text/csv" if filename.endswith(".csv") else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    return FileResponse(filepath, media_type=media_type, filename=filename)
+    media_type = "text/csv" if clean_filename.endswith(".csv") else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return FileResponse(filepath, media_type=media_type, filename=clean_filename)
 
 @app.get("/api/history")
 def get_history():

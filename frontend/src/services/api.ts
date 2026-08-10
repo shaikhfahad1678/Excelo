@@ -60,12 +60,20 @@ export const retryExtraction = async (
 export const generateExcel = async (
   fileIds: string[],
   format: 'xlsx' | 'csv' = 'xlsx'
-): Promise<{ download_url: string; filename: string }> => {
+): Promise<{ blob: Blob; filename: string }> => {
+  // Step 1: request export generation — gets back a filename
   const res = await api.post('/generate-excel', {
     file_ids: fileIds,
     format,
   });
-  return res.data;
+  const { filename } = res.data as { download_url: string; filename: string };
+
+  // Step 2: actually fetch the file as a binary blob
+  const blobRes = await api.get(`/download/${encodeURIComponent(filename)}`, {
+    responseType: 'blob',
+  });
+
+  return { blob: blobRes.data, filename };
 };
 
 

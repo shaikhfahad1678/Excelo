@@ -208,13 +208,15 @@ export function App() {
 
   const handleGenerateExport = async (fileIds: string[], format: 'xlsx' | 'csv') => {
     try {
-      const { download_url, filename } = await generateExcel(fileIds, format);
+      const { blob, filename } = await generateExcel(fileIds, format);
+      const blobUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = download_url;
+      link.href = blobUrl;
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
       link.remove();
+      URL.revokeObjectURL(blobUrl);
       showToast(`Exported ${filename} successfully!`);
     } catch (err: any) {
       showToast(err.message || 'Failed to generate export file', 'error');
