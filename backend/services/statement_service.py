@@ -5,6 +5,7 @@ Manages file registration, pipeline execution, settings, and exports.
 import os
 import time
 import uuid
+import tempfile
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from backend.extractors.pdf_classifier import classify_pdf_type
@@ -27,12 +28,24 @@ FAILSAFE_WARNING_MSG = (
 )
 
 class StatementService:
-    def __init__(self, workspace_dir: str = "c:/Fahad/excelo"):
-        self.workspace_dir = workspace_dir
-        self.upload_dir = os.path.join(workspace_dir, "data", "uploads")
-        self.export_dir = os.path.join(workspace_dir, "data", "exports")
-        os.makedirs(self.upload_dir, exist_ok=True)
-        os.makedirs(self.export_dir, exist_ok=True)
+    def __init__(self, workspace_dir: Optional[str] = None):
+        if os.environ.get("VERCEL") or not workspace_dir or not os.path.exists(str(workspace_dir)):
+            base_dir = tempfile.gettempdir()
+        else:
+            base_dir = str(workspace_dir)
+
+        self.upload_dir = os.path.join(base_dir, "data", "uploads")
+        self.export_dir = os.path.join(base_dir, "data", "exports")
+
+        try:
+            os.makedirs(self.upload_dir, exist_ok=True)
+            os.makedirs(self.export_dir, exist_ok=True)
+        except OSError:
+            base_dir = tempfile.gettempdir()
+            self.upload_dir = os.path.join(base_dir, "data", "uploads")
+            self.export_dir = os.path.join(base_dir, "data", "exports")
+            os.makedirs(self.upload_dir, exist_ok=True)
+            os.makedirs(self.export_dir, exist_ok=True)
 
         self.file_cards: Dict[str, Dict[str, Any]] = {}
         self.extraction_results: Dict[str, Dict[str, Any]] = {}
