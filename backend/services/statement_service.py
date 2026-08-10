@@ -252,6 +252,7 @@ class StatementService:
                 "summary": {"total_count": 0, "pass_count": 0, "failed_count": 0, "is_valid": False},
                 "diagnostics": diagnostics or {"selected_method": selected_engine, "selection_reason": str(e)}
             }
+            self.save_card_to_disk(card)
             self.extraction_results[file_id] = result
             return result
 
@@ -271,6 +272,7 @@ class StatementService:
         card["confidence_score"] = conf_score
         card["extraction_method"] = engine_used
         card["validation_status"] = "OK" if not is_failsafe else "Errors"
+        self.save_card_to_disk(card)
 
         result = {
             "file_id": file_id,
