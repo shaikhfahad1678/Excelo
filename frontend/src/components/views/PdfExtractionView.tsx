@@ -8,9 +8,10 @@ import {
   Trash2,
   ListChecks,
   ShieldCheck,
-  AlertOctagon,
-  AlertTriangle
+  AlertOctagon
 } from 'lucide-react';
+
+
 import type { FileCard, ExtractionResult, Transaction } from '../../types';
 import { TableViewer } from '../ui/TableViewer';
 
