@@ -12,7 +12,12 @@ export interface FileCard {
   validation_status: 'Pending' | 'OK' | 'Warnings' | 'Errors';
   detect_msg?: string;
   uploaded_at: string;
+  r2_uploaded?: boolean;
+  r2_key?: string;
+  cloudflare_status?: string;
+  cloudflare_msg?: string;
 }
+
 
 export interface Transaction {
   'Sr No.'?: number;

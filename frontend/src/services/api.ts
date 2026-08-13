@@ -103,3 +103,24 @@ export const deleteFile = async (fileId: string): Promise<boolean> => {
   }
 };
 
+export const checkCloudflareStatus = async (): Promise<{
+  configured: boolean;
+  connected: boolean;
+  status: string;
+  message: string;
+  bucket?: string;
+}> => {
+  try {
+    const res = await api.get('/cloudflare/status');
+    return res.data;
+  } catch (err: any) {
+    return {
+      configured: false,
+      connected: false,
+      status: 'Error',
+      message: err.message || 'Failed to query Cloudflare status',
+    };
+  }
+};
+
+

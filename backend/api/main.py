@@ -53,6 +53,15 @@ def health_check():
         "version": "2.0.0"
     }
 
+@app.get("/api/cloudflare/status")
+def cloudflare_status():
+    """
+    GET /api/cloudflare/status
+    Checks Cloudflare R2 connection status and credential configuration.
+    """
+    return statement_service.check_cloudflare_connection()
+
+
 @app.post("/api/upload")
 async def upload_files(files: List[UploadFile] = File(...)):
     """
