@@ -355,26 +355,6 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
                       </p>
                     )}
 
-                    {card.cloudflare_status && (
-                      <div className={`mt-2.5 p-2 rounded-xl border text-xs font-medium ${
-                        card.r2_uploaded
-                          ? 'bg-amber-50/60 border-amber-200/80 text-amber-900'
-                          : card.cloudflare_status === 'Not Configured'
-                          ? 'bg-slate-50 border-slate-200/80 text-slate-600'
-                          : 'bg-rose-50/80 border-rose-200 text-rose-800'
-                      }`}>
-                        <div className="flex items-center gap-1.5 font-bold text-[10px] uppercase tracking-wider mb-0.5">
-                          <span className={`w-2 h-2 rounded-full ${card.r2_uploaded ? 'bg-emerald-500' : card.cloudflare_status === 'Not Configured' ? 'bg-slate-400' : 'bg-rose-500'}`} />
-                          <span className="text-slate-800">Cloudflare R2:</span>
-                          <span className={card.r2_uploaded ? 'text-emerald-700 font-extrabold' : 'text-slate-700'}>
-                            {card.cloudflare_status}
-                          </span>
-                        </div>
-                        <p className="text-[11px] leading-tight text-slate-600 font-medium truncate" title={card.cloudflare_msg}>
-                          {card.cloudflare_msg}
-                        </p>
-                      </div>
-                    )}
                   </div>
                 </div>
               );
