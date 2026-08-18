@@ -1,24 +1,24 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   UploadCloud,
   FileText,
   Play,
   FileSpreadsheet,
+  Sparkles,
   Activity,
   Trash2,
   ListChecks,
   ShieldCheck,
-  AlertOctagon
+  AlertOctagon,
+  AlertTriangle
 } from 'lucide-react';
-
-
 import type { FileCard, ExtractionResult, Transaction } from '../../types';
 import { TableViewer } from '../ui/TableViewer';
 
 interface PdfExtractionViewProps {
   files: FileCard[];
   onUploadFiles: (e: React.ChangeEvent<HTMLInputElement> | React.DragEvent) => void;
-
+  onLoadSample: () => void;
   onRemoveFile: (id: string) => void;
   onExtractFiles: (fileIds: string[], engineOverrides?: Record<string, string>, engineOverride?: string) => void;
   onRetryFile: (fileId: string, preferredEngine: string) => void;
@@ -30,7 +30,7 @@ interface PdfExtractionViewProps {
 export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
   files,
   onUploadFiles,
-
+  onLoadSample,
   onRemoveFile,
   onExtractFiles,
   onGenerateExport,
@@ -43,63 +43,13 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
   const [engineOverrides, setEngineOverrides] = useState<Record<string, string>>({});
   const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false);
 
-  const dragCounter = useRef(0);
-
-  // Prevent browser default drop behavior (opening file in tab)
-  useEffect(() => {
-    const preventDefaults = (e: DragEvent) => {
-      e.preventDefault();
-    };
-    window.addEventListener('dragover', preventDefaults);
-    window.addEventListener('drop', preventDefaults);
-    return () => {
-      window.removeEventListener('dragover', preventDefaults);
-      window.removeEventListener('drop', preventDefaults);
-    };
-  }, []);
-
-  // Auto-select active file automatically so analysis is displayed immediately
-  useEffect(() => {
-    if (files.length > 0) {
-      if (!selectedFileId || !files.some((f) => f.id === selectedFileId)) {
-        setSelectedFileId(files[files.length - 1].id);
-      }
-    } else {
-      setSelectedFileId(null);
-    }
-  }, [files, selectedFileId]);
-
-  useEffect(() => {
-    const fileIdsWithResults = Object.keys(results);
-    if (fileIdsWithResults.length > 0) {
-      const latestResultId = fileIdsWithResults[fileIdsWithResults.length - 1];
-      if (files.some((f) => f.id === latestResultId)) {
-        setSelectedFileId(latestResultId);
-      }
-    }
-  }, [results, files]);
-
   // Drag and drop handlers
-  const handleDragEnter = (e: React.DragEvent) => {
+  const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    dragCounter.current += 1;
-    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+    if (e.type === 'dragenter' || e.type === 'dragover') {
       setDragActive(true);
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter.current -= 1;
-    if (dragCounter.current <= 0) {
-      dragCounter.current = 0;
+    } else if (e.type === 'dragleave') {
       setDragActive(false);
     }
   };
@@ -107,9 +57,8 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    dragCounter.current = 0;
     setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       onUploadFiles(e);
     }
   };
@@ -120,7 +69,18 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
 
   const availableEngines = [
     'Auto Multi-Engine Pipeline',
-    'TYPE 1: Native Digital PDF Pipeline'
+    'ICICI Bank Statement',
+    'Axis Bank Statement',
+    'IndusInd Bank Statement',
+    'HDFC Bank Statement',
+    'Method 1: Spatial Bounding-Box Layout Clustering + PP-OCRv4 (Recommended #1)',
+    'Method 2: OpenCV Morphological Grid Line Cleaning + Cell Isolation',
+    'Method 3: Local Compact Vision Model (Florence-2-base / Qwen2-VL)',
+
+    'PaddleOCR Engine (PP-OCRv4)',
+    'TYPE 1: Native Digital PDF Pipeline',
+    'TYPE 2: OCR Searchable PDF Pipeline',
+    'TYPE 3: Scanned PDF OCR Pipeline'
   ];
 
 
@@ -142,34 +102,7 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
   };
 
   return (
-    <div
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className="space-y-6 pb-12 max-w-[1600px] mx-auto font-sans antialiased relative min-h-[calc(100vh-100px)]"
-    >
-      {/* Full-Screen Drag & Drop Overlay */}
-      {dragActive && (
-        <div
-          onDragEnter={handleDragEnter}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          className="fixed inset-0 z-50 bg-blue-600/90 backdrop-blur-md flex flex-col items-center justify-center text-white border-4 border-dashed border-white/80 p-8 transition-all duration-200 pointer-events-none"
-        >
-          <div className="w-20 h-20 rounded-3xl bg-white/20 flex items-center justify-center mb-6 backdrop-blur-xl border border-white/40 shadow-2xl animate-bounce pointer-events-none">
-            <UploadCloud className="w-10 h-10 text-white" />
-          </div>
-          <h2 className="text-2xl font-black tracking-tight mb-2 pointer-events-none">
-            Drop PDF Bank Statements Anywhere
-          </h2>
-          <p className="text-sm font-medium text-blue-100 max-w-md text-center pointer-events-none">
-            Release your files to automatically load them into the Excelo workspace for instant multi-engine parsing and verification.
-          </p>
-        </div>
-      )}
-
+    <div className="space-y-6 pb-12 max-w-[1600px] mx-auto font-sans antialiased">
       {/* Executive Minimalist Header & Control Bar */}
       <div className="bg-white border border-slate-200/80 rounded-2xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -185,6 +118,13 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={onLoadSample}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100/80 text-slate-700 hover:bg-slate-200/80 border border-slate-200 text-xs font-semibold transition"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+            Load Sample Statement
+          </button>
           {files.length > 0 && (
             <button
               onClick={handleRunExtract}
@@ -207,64 +147,45 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
         </div>
       </div>
 
-      {/* Full Window Workspace Drop Zone or Document Workspace Grid */}
-      {files.length === 0 ? (
-        <div
-          className={`relative overflow-hidden rounded-3xl border-2 border-dashed transition-all duration-300 min-h-[480px] flex flex-col items-center justify-center p-12 text-center shadow-sm ${
-            dragActive
-              ? 'border-blue-500 bg-blue-50/60 ring-8 ring-blue-500/10'
-              : 'border-slate-300/80 hover:border-blue-400 bg-white hover:bg-slate-50/50'
-          }`}
-        >
-          <input
-            type="file"
-            id="pdf-upload-input"
-            multiple
-            accept=".pdf"
-            onChange={onUploadFiles}
-            className="hidden"
-          />
-
-          <div className="w-20 h-20 rounded-3xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center mb-6 shadow-sm group-hover:scale-110 transition duration-300">
-            <UploadCloud className="w-10 h-10" />
+      {/* Sleek Drag & Drop File Upload Area */}
+      <div
+        onDragEnter={handleDrag}
+        onDragLeave={handleDrag}
+        onDragOver={handleDrag}
+        onDrop={handleDrop}
+        className={`relative overflow-hidden rounded-2xl border-2 border-dashed transition-all duration-200 ${
+          dragActive
+            ? 'border-blue-500 bg-blue-50/40 ring-4 ring-blue-500/10'
+            : 'border-slate-300/80 hover:border-slate-400 bg-white'
+        }`}
+      >
+        <input
+          type="file"
+          id="pdf-upload-input"
+          multiple
+          accept=".pdf"
+          onChange={onUploadFiles}
+          className="hidden"
+        />
+        <label htmlFor="pdf-upload-input" className="cursor-pointer block p-8 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center mx-auto mb-3 transition group-hover:scale-105">
+            <UploadCloud className="w-6 h-6" />
           </div>
-
-          <h2 className="text-xl font-extrabold text-slate-900 tracking-tight mb-2">
-            Drop PDF Bank Statements Here
-          </h2>
-
-          <p className="text-xs text-slate-500 max-w-md mb-8 leading-relaxed font-medium">
-            Drag & drop one or multiple PDF bank statements anywhere into this window, or browse your device to import documents into the processing workspace.
+          <h3 className="text-sm font-bold text-slate-800 tracking-tight">
+            Drop PDF bank statements here, or <span className="text-blue-600 font-semibold hover:underline">browse files</span>
+          </h3>
+          <p className="text-xs text-slate-400 mt-1 font-medium">
+            Classified automatically into Native Digital PDF, OCR Searchable PDF, or Scanned PDF
           </p>
+        </label>
+      </div>
 
-          <label
-            htmlFor="pdf-upload-input"
-            className="cursor-pointer inline-flex items-center gap-2.5 px-6 py-3 rounded-xl bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 active:scale-95 shadow-md shadow-blue-600/20 transition-all duration-200"
-          >
-            <UploadCloud className="w-4 h-4" />
-            Browse Files from Device
-          </label>
-
-          <div className="flex items-center gap-4 mt-10 pt-8 border-t border-slate-100 text-[11px] font-semibold text-slate-400">
-            <span className="flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-blue-500" /> Native Digital PDF
-            </span>
-            <span>•</span>
-            <span className="flex items-center gap-1.5">
-              <ListChecks className="w-3.5 h-3.5 text-emerald-500" /> 11-Rule Validation
-            </span>
-            <span>•</span>
-            <span className="flex items-center gap-1.5">
-              <FileSpreadsheet className="w-3.5 h-3.5 text-purple-500" /> Excel & CSV Export
-            </span>
-          </div>
-        </div>
-      ) : (
-        /* Uploaded File Cards Grid */
-        <div className="space-y-4">
+      {/* Uploaded File Cards Grid */}
+      {files.length > 0 && (
+        <div className="space-y-3">
           <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider px-1">
             <span>Uploaded Workspace Documents ({files.length})</span>
-            <span>Active Statement Analysis</span>
+            <span>Select card to view analysis</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -355,31 +276,21 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
                       </p>
                     )}
 
+                    {(card.status === 'Failed' || card.status === 'Failed Validation') && (
+                      <div className="mt-2 p-2 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs font-semibold space-y-1">
+                        <div className="flex items-center gap-1 text-rose-800 font-bold">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                          <span>Extraction Failure Reason</span>
+                        </div>
+                        <p className="text-[11px] leading-tight text-rose-600 font-medium">
+                          {results[card.id]?.failsafe_warning || results[card.id]?.error || card.detect_msg || 'Engine error occurred or API Key missing.'}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
-
             })}
-
-            {/* Inline Add More Statements Card */}
-            <input
-              type="file"
-              id="pdf-upload-add-more"
-              multiple
-              accept=".pdf"
-              onChange={onUploadFiles}
-              className="hidden"
-            />
-            <label
-              htmlFor="pdf-upload-add-more"
-              className="p-5 rounded-2xl border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/50 hover:bg-blue-50/30 cursor-pointer flex flex-col items-center justify-center min-h-[180px] text-center transition-all duration-200 group"
-            >
-              <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 text-blue-600 flex items-center justify-center mb-2 group-hover:scale-110 shadow-sm transition">
-                <UploadCloud className="w-5 h-5" />
-              </div>
-              <span className="text-xs font-bold text-slate-800">Add More Statements</span>
-              <span className="text-[11px] text-slate-400 mt-0.5">Drop PDFs or browse</span>
-            </label>
           </div>
         </div>
       )}
@@ -492,7 +403,7 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
               <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/70">
                 <div className="text-[11px] font-semibold text-slate-500">Opening Balance</div>
                 <div className="text-xl font-extrabold text-slate-900 mt-1">
-                  {activeResult.summary.opening_balance.toLocaleString('en-US', {
+                  {(activeResult.summary.opening_balance ?? 0).toLocaleString('en-US', {
                     minimumFractionDigits: 2
                   })}
                 </div>
@@ -501,7 +412,7 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
               <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/70">
                 <div className="text-[11px] font-semibold text-slate-500">Closing Balance</div>
                 <div className="text-xl font-extrabold text-slate-900 mt-1">
-                  {activeResult.summary.closing_balance.toLocaleString('en-US', {
+                  {(activeResult.summary.closing_balance ?? 0).toLocaleString('en-US', {
                     minimumFractionDigits: 2
                   })}
                 </div>
@@ -510,7 +421,7 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
               <div className="p-4 bg-rose-50/40 rounded-2xl border border-rose-100">
                 <div className="text-[11px] font-semibold text-rose-700">Total Withdrawal (Dr)</div>
                 <div className="text-xl font-extrabold text-rose-700 mt-1">
-                  {activeResult.summary.total_debit.toLocaleString('en-US', {
+                  {(activeResult.summary.total_debit ?? 0).toLocaleString('en-US', {
                     minimumFractionDigits: 2
                   })}
                 </div>
@@ -519,11 +430,12 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
               <div className="p-4 bg-emerald-50/40 rounded-2xl border border-emerald-100">
                 <div className="text-[11px] font-semibold text-emerald-700">Total Deposit (Cr)</div>
                 <div className="text-xl font-extrabold text-emerald-700 mt-1">
-                  {activeResult.summary.total_credit.toLocaleString('en-US', {
+                  {(activeResult.summary.total_credit ?? 0).toLocaleString('en-US', {
                     minimumFractionDigits: 2
                   })}
                 </div>
               </div>
+
 
               <div className="p-4 bg-blue-50/40 rounded-2xl border border-blue-100">
                 <div className="text-[11px] font-semibold text-blue-700">Pass Rate / Time</div>

@@ -10,7 +10,7 @@ Enforces 11 strict validation rules, row confidence scoring, and granular valida
 - BALANCE MISMATCH
 """
 import re
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from backend.utils.logger import logger
 
 DATE_PATTERN = re.compile(
@@ -44,9 +44,16 @@ def is_header_or_footer(desc: str, has_date: bool = False, has_amount: bool = Fa
             return True
     return False
 
-def validate_row_rules(tx: Dict[str, Any], prev_balance: float = None, tolerance: float = 0.05) -> Tuple[str, str, Dict[str, Any]]:
+def validate_row_rules(
+    tx: Dict[str, Any],
+    prev_balance: Optional[float] = None,
+    tolerance: float = 0.05,
+    is_reverse: bool = False,
+    prev_debit: Optional[float] = None,
+    prev_credit: Optional[float] = None
+) -> Tuple[str, str, Dict[str, Any]]:
     """
-    Evaluates individual transaction row against strict validation rules.
+    Validates a single transaction row against rules 1, 2, 3, 4, 5, 6, 7, 11.
     Returns (Status, Confidence, Details).
     """
     date_val = str(tx.get("Date") or "").strip()
@@ -90,7 +97,12 @@ def validate_row_rules(tx: Dict[str, Any], prev_balance: float = None, tolerance
     if prev_balance is not None:
         d_val = float(debit or 0.0)
         c_val = float(credit or 0.0)
-        expected_bal = prev_balance + c_val - d_val
+
+        if is_reverse and prev_debit is not None and prev_credit is not None:
+            expected_bal = prev_balance - prev_credit + prev_debit
+        else:
+            expected_bal = prev_balance + c_val - d_val
+
         actual_bal = float(balance)
 
         if abs(expected_bal - actual_bal) > tolerance:
@@ -125,12 +137,39 @@ def validate_and_enrich_transactions(
             "rejection_reason": "No transactions extracted"
         }
 
+    # Auto-detect direction (chronological vs reverse-chronological)
+    is_reverse = False
+    fwd_errs = 0
+    rev_errs = 0
+    pb = None
+    pd_val = 0.0
+    pc_val = 0.0
+    for tx in raw_transactions:
+        b = tx.get("Balance")
+        d = float(tx.get("Debit") or 0.0)
+        c = float(tx.get("Credit") or 0.0)
+        if b is not None and isinstance(b, (int, float)):
+            b_float = float(b)
+            if pb is not None:
+                if abs((pb + c - d) - b_float) > tolerance:
+                    fwd_errs += 1
+                if abs((pb - pc_val + pd_val) - b_float) > tolerance:
+                    rev_errs += 1
+            pb = b_float
+            pd_val = d
+            pc_val = c
+
+    if rev_errs < fwd_errs:
+        is_reverse = True
+
     enriched_transactions = []
     seen_hashes = set()
     duplicate_count = 0
     incomplete_count = 0
     balance_mismatches = 0
     prev_balance = None
+    prev_debit = None
+    prev_credit = None
     sr_no = 1
 
     total_debit = 0.0
@@ -170,7 +209,10 @@ def validate_and_enrich_transactions(
         seen_hashes.add(tx_hash)
 
         # Validate row
-        status, confidence, details = validate_row_rules(tx, prev_balance, tolerance)
+        status, confidence, details = validate_row_rules(
+            tx, prev_balance, tolerance,
+            is_reverse=is_reverse, prev_debit=prev_debit, prev_credit=prev_credit
+        )
 
         if is_duplicate:
             status = "DUPLICATE"
@@ -179,11 +221,27 @@ def validate_and_enrich_transactions(
         if status in ["MISSING DATA", "FAILED VALIDATION"]:
             incomplete_count += 1
 
+        if status == "BALANCE MISMATCH" and b_val is not None:
+            # Check if this row initiates a new valid balance chain (period / statement gap)
+            if i + 1 < len(raw_transactions):
+                next_tx = raw_transactions[i + 1]
+                next_b = next_tx.get("Balance")
+                if next_b is not None and isinstance(next_b, (int, float)):
+                    next_d = float(next_tx.get("Debit") or 0.0)
+                    next_c = float(next_tx.get("Credit") or 0.0)
+                    exp_next = (b_val - c_val + d_val) if is_reverse else (b_val + next_c - next_d)
+                    if abs(exp_next - float(next_b)) <= tolerance:
+                        status = "PASS"
+                        confidence = "High"
+                        details = {"note": "Period balance chain reset"}
+
         if status == "BALANCE MISMATCH":
             balance_mismatches += 1
 
         if b_val is not None and status != "BALANCE MISMATCH":
             prev_balance = b_val
+            prev_debit = d_val
+            prev_credit = c_val
 
         # Enrich transaction dict
         enriched_tx = dict(tx)

@@ -84,26 +84,79 @@ def run_noisy_digital_extractor(pdf_path: str) -> List[Dict[str, Any]]:
         logger.debug(f"Noisy digital extractor failed on {pdf_path}: {e}")
         return []
 
-def run_pypdf_fast_lines(pdf_path: str) -> List[Dict[str, Any]]:
-    rows = []
+def run_robust_ocr_extractor(pdf_path: str) -> List[Dict[str, Any]]:
     try:
-        import pypdf
-        reader = pypdf.PdfReader(pdf_path)
-        for page in reader.pages:
-            text = page.extract_text() or ""
-            lines = text.splitlines()
-            for line in lines:
-                parts = [p.strip() for p in line.split("  ") if p.strip()]
-                if parts:
-                    rows.append(parts)
-        return clean_and_normalize_table(rows)
+        from backend.ocr.engine import ocr_engine
+        result = ocr_engine.process_scanned_pdf(pdf_path)
+        return result.get("transactions", [])
     except Exception as e:
-        logger.debug(f"pypdf fast lines failed on {pdf_path}: {e}")
+        logger.debug(f"Robust OCR extractor failed on {pdf_path}: {e}")
+        return []
+
+def run_paddleocr_extractor(pdf_path: str) -> List[Dict[str, Any]]:
+    try:
+        from backend.ocr.engine import ocr_engine
+        return ocr_engine.process_via_paddleocr(pdf_path)
+    except Exception as e:
+        logger.debug(f"PaddleOCR extractor failed on {pdf_path}: {e}")
         return []
 
 
+def run_spatial_ocr_extractor(pdf_path: str) -> List[Dict[str, Any]]:
+    try:
+        from backend.extractors.spatial_ocr_extractor import extract_via_spatial_layout_ocr
+        return extract_via_spatial_layout_ocr(pdf_path)
+    except Exception as e:
+        logger.debug(f"Spatial OCR extractor failed: {e}")
+        return []
 
+def run_opencv_grid_extractor(pdf_path: str) -> List[Dict[str, Any]]:
+    try:
+        from backend.extractors.opencv_grid_extractor import extract_via_opencv_grid
+        return extract_via_opencv_grid(pdf_path)
+    except Exception as e:
+        logger.debug(f"OpenCV grid extractor failed: {e}")
+        return []
 
+def run_local_vision_extractor(pdf_path: str) -> List[Dict[str, Any]]:
+    try:
+        from backend.extractors.local_vision_extractor import extract_via_local_vision
+        return extract_via_local_vision(pdf_path)
+    except Exception as e:
+        logger.debug(f"Local vision extractor failed: {e}")
+        return []
+
+def run_hdfc_extractor(pdf_path: str) -> List[Dict[str, Any]]:
+    try:
+        from backend.extractors.hdfc_extractor import extract_hdfc_pdf
+        return extract_hdfc_pdf(pdf_path)
+    except Exception as e:
+        logger.error(f"HDFC extractor failed: {e}")
+        return []
+
+def run_indusind_extractor(pdf_path: str) -> List[Dict[str, Any]]:
+    try:
+        from backend.extractors.indusind_extractor import run_indusind_extractor as ext
+        return ext(pdf_path)
+    except Exception as e:
+        logger.error(f"IndusInd extractor failed: {e}")
+        return []
+
+def run_axis_extractor(pdf_path: str) -> List[Dict[str, Any]]:
+    try:
+        from backend.extractors.axis_extractor import run_axis_extractor as ext
+        return ext(pdf_path)
+    except Exception as e:
+        logger.error(f"Axis extractor failed: {e}")
+        return []
+
+def run_icici_extractor(pdf_path: str) -> List[Dict[str, Any]]:
+    try:
+        from backend.extractors.icici_extractor import run_icici_extractor as ext
+        return ext(pdf_path)
+    except Exception as e:
+        logger.error(f"ICICI extractor failed: {e}")
+        return []
 
 
 

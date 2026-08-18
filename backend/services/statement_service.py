@@ -5,11 +5,9 @@ Manages file registration, pipeline execution, settings, and exports.
 import os
 import time
 import uuid
-import tempfile
-import json
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-from backend.extractors.pdf_classifier import classify_pdf_type, TYPE_DIGITAL
+from backend.extractors.pdf_classifier import classify_pdf_type
 from backend.extractors.candidate_extractors import (
     run_camelot_lattice,
     run_camelot_stream,
@@ -20,11 +18,8 @@ from backend.extractors.candidate_extractors import (
 from backend.extractors.pipeline import execute_intelligent_pipeline
 from backend.validators.strict_validator import validate_and_enrich_transactions
 from backend.excel.writer import generate_excel_workbook, generate_csv
-from backend.utils.logger import logger
-import backend.config as config
-import boto3
-from botocore.exceptions import NoCredentialsError, ClientError
 
+from backend.utils.logger import logger
 
 FAILSAFE_WARNING_MSG = (
     "Fail Safe Warning — Action Required\n"
@@ -33,133 +28,80 @@ FAILSAFE_WARNING_MSG = (
 )
 
 class StatementService:
-    def __init__(self, workspace_dir: Optional[str] = None):
-        if os.environ.get("VERCEL") or not workspace_dir or not os.path.exists(str(workspace_dir)):
-            base_dir = tempfile.gettempdir()
-        else:
-            base_dir = str(workspace_dir)
+    def __init__(self, workspace_dir: str = "c:/Fahad/excelo"):
+        self.workspace_dir = workspace_dir
+        self.upload_dir = os.path.join(workspace_dir, "data", "uploads")
+        self.export_dir = os.path.join(workspace_dir, "data", "exports")
+        self.results_dir = os.path.join(workspace_dir, "data", "results")
+        os.makedirs(self.upload_dir, exist_ok=True)
+        os.makedirs(self.export_dir, exist_ok=True)
+        os.makedirs(self.results_dir, exist_ok=True)
 
-        self.upload_dir = os.path.join(base_dir, "data", "uploads")
-        self.export_dir = os.path.join(base_dir, "data", "exports")
-
-        try:
-            os.makedirs(self.upload_dir, exist_ok=True)
-            os.makedirs(self.export_dir, exist_ok=True)
-        except OSError:
-            base_dir = tempfile.gettempdir()
-            self.upload_dir = os.path.join(base_dir, "data", "uploads")
-            self.export_dir = os.path.join(base_dir, "data", "exports")
-            os.makedirs(self.upload_dir, exist_ok=True)
-            os.makedirs(self.export_dir, exist_ok=True)
+        self.settings_file = os.path.join(workspace_dir, "data", "settings.json")
 
         self.file_cards: Dict[str, Dict[str, Any]] = {}
         self.extraction_results: Dict[str, Dict[str, Any]] = {}
         self.process_logs: List[Dict[str, Any]] = []
         self.history_records: List[Dict[str, Any]] = []
-        self.clean_upload_directory()
 
-    def clean_upload_directory(self):
+        self.settings: Dict[str, Any] = {
+            "extraction_priority": "Accuracy First",
+            "preferred_engine": "Auto Multi-Engine Pipeline",
+            "confidence_threshold": 85.0,
+            "validation_rules": {
+                "arithmetic_check": True,
+                "tolerance": 0.05,
+                "duplicate_check": True
+            },
+            "excel_output": {
+                "include_summary_sheet": True,
+                "styling": "Corporate Blue",
+                "format": "xlsx"
+            },
+            "batch_processing": {
+                "max_concurrent": 4,
+                "auto_export": False
+            },
+            "log_retention_days": 30,
+            "ocr_options": {
+                "enable_ocr_fallback": True,
+                "ocr_engine": "Tesseract OCR (v5.3)"
+            }
+        }
+        self._load_settings_from_disk()
+        self._load_cards_and_results_from_disk()
+
+    def _save_json_disk(self, path: str, data: Any):
         try:
-            if os.path.exists(self.upload_dir):
-                for f in os.listdir(self.upload_dir):
-                    fp = os.path.join(self.upload_dir, f)
-                    if os.path.isfile(fp):
-                        os.remove(fp)
-                logger.info("Cleaned upload directory.")
+            import json
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
         except Exception as e:
-            logger.error(f"Error cleaning upload directory: {e}")
+            logger.warning(f"Failed to save json {path}: {e}")
 
-    def delete_file(self, file_id: str) -> bool:
-        card = self.get_card(file_id)
-        if file_id in self.file_cards:
-            self.file_cards.pop(file_id)
-        
-        json_path = os.path.join(self.upload_dir, f"{file_id}.json")
-        if os.path.exists(json_path):
-            try:
-                os.remove(json_path)
-            except Exception as e:
-                logger.error(f"Error deleting card json {json_path}: {e}")
-
-        file_path = card.get("file_path") if card else None
-        if file_path and os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                logger.info(f"Deleted uploaded file from disk: {file_path}")
-            except Exception as e:
-                logger.error(f"Error deleting file {file_path}: {e}")
-        
-        if file_id in self.extraction_results:
-            del self.extraction_results[file_id]
-        return True
-
-    def save_card_to_disk(self, card: Dict[str, Any]):
+    def _load_json_disk(self, path: str) -> Optional[Any]:
         try:
-            json_path = os.path.join(self.upload_dir, f"{card['id']}.json")
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(card, f)
-        except Exception as e:
-            logger.warning(f"Could not save card to disk: {e}")
-
-    def save_result_to_disk(self, file_id: str, result: Dict[str, Any]):
-        """Persist extraction result to disk so it survives process restarts."""
-        try:
-            result_path = os.path.join(self.upload_dir, f"{file_id}.result.json")
-            with open(result_path, "w", encoding="utf-8") as f:
-                json.dump(result, f)
-        except Exception as e:
-            logger.warning(f"Could not save result to disk: {e}")
-
-    def load_result_from_disk(self, file_id: str) -> Optional[Dict[str, Any]]:
-        """Load extraction result from disk if not in memory."""
-        result_path = os.path.join(self.upload_dir, f"{file_id}.result.json")
-        if os.path.exists(result_path):
-            try:
-                with open(result_path, "r", encoding="utf-8") as f:
+            import json
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
                     return json.load(f)
-            except Exception as e:
-                logger.warning(f"Could not load result from disk: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to load json {path}: {e}")
         return None
 
-    def get_card(self, file_id: str) -> Optional[Dict[str, Any]]:
-        if file_id in self.file_cards:
-            return self.file_cards[file_id]
-
-        json_path = os.path.join(self.upload_dir, f"{file_id}.json")
-        if os.path.exists(json_path):
-            try:
-                with open(json_path, "r", encoding="utf-8") as f:
-                    card = json.load(f)
-                    self.file_cards[file_id] = card
-                    return card
-            except Exception as e:
-                logger.warning(f"Could not load card from disk: {e}")
-
-        if os.path.exists(self.upload_dir):
-            for fname in os.listdir(self.upload_dir):
-                if fname.startswith(f"{file_id}_") and fname.endswith(".pdf"):
-                    pdf_path = os.path.join(self.upload_dir, fname)
-                    orig_filename = fname[len(file_id) + 1:]
-                    pdf_type, meta = classify_pdf_type(pdf_path)
-                    card = {
-                        "id": file_id,
-                        "filename": orig_filename,
-                        "file_path": pdf_path,
-                        "pdf_type": pdf_type,
-                        "pages": 1,
-                        "file_size": "PDF",
-                        "status": "Ready",
-                        "extraction_method": "Auto Multi-Engine Pipeline",
-                        "progress": 0,
-                        "confidence_score": 0.0,
-                        "validation_status": "Pending",
-                        "detect_msg": f"Statement classified as {pdf_type}",
-                        "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }
-                    self.file_cards[file_id] = card
-                    self.save_card_to_disk(card)
-                    return card
-        return None
+    def _load_cards_and_results_from_disk(self):
+        try:
+            import glob
+            for card_file in glob.glob(os.path.join(self.results_dir, "*_card.json")):
+                card = self._load_json_disk(card_file)
+                if isinstance(card, dict) and "id" in card:
+                    self.file_cards[card["id"]] = card
+            for res_file in glob.glob(os.path.join(self.results_dir, "*_result.json")):
+                res = self._load_json_disk(res_file)
+                if isinstance(res, dict) and "file_id" in res:
+                    self.extraction_results[res["file_id"]] = res
+        except Exception as e:
+            logger.warning(f"Error loading cards/results from disk: {e}")
 
     def register_file(self, filename: str, content: bytes) -> Dict[str, Any]:
         file_id = str(uuid.uuid4())[:8]
@@ -173,200 +115,66 @@ class StatementService:
         file_size_kb = round(file_size / 1024, 1)
 
         pdf_type, meta = classify_pdf_type(file_path)
-        is_digital = pdf_type == TYPE_DIGITAL
 
         card = {
             "id": file_id,
             "filename": filename,
             "file_path": file_path,
             "pdf_type": pdf_type,
-            "pages": meta.get("total_pages", 1),
+            "pages": 1,
             "file_size": f"{file_size_kb} KB",
-            "status": "Ready" if is_digital else "Failed",
-            "extraction_method": "Auto Multi-Engine Pipeline",
+            "status": "Ready",
+            "extraction_method": self.settings["preferred_engine"],
             "progress": 0,
             "confidence_score": 0.0,
-            "validation_status": "Pending" if is_digital else "Errors",
-            "detect_msg": f"Statement classified as {pdf_type}" if is_digital else "Failed: Noisy or scanned non-digital PDF cannot be parsed.",
+            "validation_status": "Pending",
+            "detect_msg": f"Statement classified as {pdf_type}",
             "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
 
         self.file_cards[file_id] = card
-        self.save_card_to_disk(card)
-
-        # Upload file to Cloudflare R2 if credentials are configured
-        r2_result = self.upload_to_cloudflare_r2(file_path, saved_filename)
-        card["r2_uploaded"] = r2_result["success"]
-        card["r2_key"] = r2_result["r2_key"]
-        card["cloudflare_status"] = r2_result["status"]
-        card["cloudflare_msg"] = r2_result["message"]
-
-        # Save card with updated details
-        self.save_card_to_disk(card)
+        self._save_json_disk(os.path.join(self.results_dir, f"{file_id}_card.json"), card)
         return card
 
-    def check_cloudflare_connection(self) -> Dict[str, Any]:
-        """
-        Checks connection to Cloudflare R2 bucket.
-        """
-        if not all([
-            config.CLOUDFLARE_R2_ACCOUNT_ID,
-            config.CLOUDFLARE_R2_ACCESS_KEY_ID,
-            config.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
-            config.CLOUDFLARE_R2_BUCKET_NAME
-        ]):
-            return {
-                "configured": False,
-                "connected": False,
-                "status": "Not Configured",
-                "message": "Cloudflare R2 credentials missing in .env file. Please fill in ACCOUNT_ID, ACCESS_KEY, SECRET_KEY, and BUCKET_NAME."
-            }
-
-        try:
-            endpoint_url = f"https://{config.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-            s3_client = boto3.client(
-                service_name="s3",
-                endpoint_url=endpoint_url,
-                aws_access_key_id=config.CLOUDFLARE_R2_ACCESS_KEY_ID,
-                aws_secret_access_key=config.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
-                region_name="auto"
-            )
-            # Test listing objects to verify connection
-            s3_client.list_objects_v2(Bucket=config.CLOUDFLARE_R2_BUCKET_NAME, MaxKeys=1)
-            return {
-                "configured": True,
-                "connected": True,
-                "status": "Connected",
-                "bucket": config.CLOUDFLARE_R2_BUCKET_NAME,
-                "message": f"Cloudflare R2 connected successfully! Bucket: '{config.CLOUDFLARE_R2_BUCKET_NAME}'"
-            }
-        except ClientError as e:
-            error_code = e.response.get("Error", {}).get("Code", "ClientError")
-            error_msg = e.response.get("Error", {}).get("Message", str(e))
-            return {
-                "configured": True,
-                "connected": False,
-                "status": "Connection Error",
-                "message": f"Cloudflare R2 connection failed ({error_code}): {error_msg}"
-            }
-        except Exception as e:
-            return {
-                "configured": True,
-                "connected": False,
-                "status": "Connection Error",
-                "message": f"Cloudflare R2 connection error: {str(e)}"
-            }
-
-    def upload_to_cloudflare_r2(self, file_path: str, saved_filename: str) -> Dict[str, Any]:
-        """
-        Uploads a PDF file to Cloudflare R2 using the configured credentials.
-        The file will be stored in the 'pdf file/' folder.
-        Returns a dictionary with status, message, and r2_key.
-        """
-        if not all([
-            config.CLOUDFLARE_R2_ACCOUNT_ID,
-            config.CLOUDFLARE_R2_ACCESS_KEY_ID,
-            config.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
-            config.CLOUDFLARE_R2_BUCKET_NAME
-        ]):
-            msg = "Cloudflare R2 credentials not configured in .env file (saved to local disk only)."
-            logger.warning(msg)
-            return {
-                "success": False,
-                "status": "Not Configured",
-                "message": msg,
-                "r2_key": None
-            }
-
-        try:
-            endpoint_url = f"https://{config.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-            s3_client = boto3.client(
-                service_name="s3",
-                endpoint_url=endpoint_url,
-                aws_access_key_id=config.CLOUDFLARE_R2_ACCESS_KEY_ID,
-                aws_secret_access_key=config.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
-                region_name="auto"
-            )
-
-            object_key = f"pdf file/{saved_filename}"
-
-            logger.info(f"Uploading {file_path} to Cloudflare R2 bucket '{config.CLOUDFLARE_R2_BUCKET_NAME}' at '{object_key}'...")
-            
-            s3_client.upload_file(file_path, config.CLOUDFLARE_R2_BUCKET_NAME, object_key)
-            
-            msg = f"PDF file uploaded successfully to Cloudflare R2 under folder 'pdf file' ({object_key})."
-            logger.info(msg)
-            return {
-                "success": True,
-                "status": "Connected & Uploaded",
-                "message": msg,
-                "r2_key": object_key
-            }
-
-        except ClientError as e:
-            error_code = e.response.get("Error", {}).get("Code", "ClientError")
-            error_msg = e.response.get("Error", {}).get("Message", str(e))
-            msg = f"Cloudflare R2 upload failed ({error_code}): {error_msg}"
-            logger.error(msg)
-            return {
-                "success": False,
-                "status": "Upload Failed",
-                "message": msg,
-                "r2_key": None
-            }
-        except Exception as e:
-            msg = f"Cloudflare R2 upload error: {str(e)}"
-            logger.error(msg)
-            return {
-                "success": False,
-                "status": "Upload Failed",
-                "message": msg,
-                "r2_key": None
-            }
-
-
-
     def extract_file(self, file_id: str, engine_override: Optional[str] = None) -> Dict[str, Any]:
-        card = self.get_card(file_id)
-        if not card:
-            return {
-                "file_id": file_id,
-                "filename": file_id,
-                "success": False,
-                "error": "File session expired or not found on serverless container. Please re-upload PDF.",
-                "transactions": [],
-                "summary": {}
-            }
+        if file_id not in self.file_cards:
+            card_data = self._load_json_disk(os.path.join(self.results_dir, f"{file_id}_card.json"))
+            if isinstance(card_data, dict):
+                self.file_cards[file_id] = card_data
+            else:
+                # Try finding uploaded file on disk
+                import glob
+                matches = glob.glob(os.path.join(self.upload_dir, f"{file_id}_*"))
+                if matches:
+                    fp = matches[0]
+                    fname = os.path.basename(fp).split("_", 1)[-1]
+                    pdf_type, _ = classify_pdf_type(fp)
+                    card_data = {
+                        "id": file_id,
+                        "filename": fname,
+                        "file_path": fp,
+                        "pdf_type": pdf_type,
+                        "pages": 1,
+                        "file_size": f"{round(os.path.getsize(fp)/1024, 1)} KB",
+                        "status": "Ready",
+                        "extraction_method": self.settings["preferred_engine"],
+                        "progress": 0,
+                        "confidence_score": 0.0,
+                        "validation_status": "Pending",
+                        "detect_msg": f"Statement classified as {pdf_type}",
+                        "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    self.file_cards[file_id] = card_data
+                else:
+                    raise KeyError(f"File ID {file_id} not found in workspace.")
 
+        card = self.file_cards[file_id]
         card["status"] = "Extracting"
         card["progress"] = 30
-        self.save_card_to_disk(card)
         pdf_path = card["file_path"]
         start_time = time.time()
 
-        pdf_type, meta = classify_pdf_type(pdf_path)
-        if pdf_type != TYPE_DIGITAL:
-            card["status"] = "Failed"
-            card["progress"] = 100
-            card["validation_status"] = "Errors"
-            card["detect_msg"] = "Failed: Noisy or scanned non-digital PDF cannot be parsed."
-            self.save_card_to_disk(card)
-            return {
-                "file_id": file_id,
-                "filename": card["filename"],
-                "pdf_type": pdf_type,
-                "success": False,
-                "engine_used": "None",
-                "processing_time": 0.05,
-                "confidence_score": 0.0,
-                "failsafe_warning": "Failed: Noisy or scanned non-digital PDF cannot be parsed.",
-                "error": "Failed: Noisy or scanned non-digital PDF cannot be parsed.",
-                "transactions": [],
-                "summary": {"total_count": 0, "pass_count": 0, "failed_count": 0, "is_valid": False},
-                "diagnostics": {"selected_method": "None", "selection_reason": "Failed: Noisy or scanned non-digital PDF cannot be parsed."}
-            }
-
-        selected_engine = engine_override or "Auto Multi-Engine Pipeline"
+        selected_engine = engine_override or self.settings["preferred_engine"]
 
         engine_used = selected_engine
         diagnostics = {}
@@ -374,7 +182,27 @@ class StatementService:
         summary = {}
 
         try:
-            if "TYPE 1" in selected_engine:
+            if selected_engine == "ICICI Bank Statement" or (selected_engine == "Auto Multi-Engine Pipeline" and card.get("pdf_type") == "ICICI Bank Statement"):
+                from backend.extractors.candidate_extractors import run_icici_extractor
+                raw = run_icici_extractor(pdf_path)
+                validated_txs, summary = validate_and_enrich_transactions(raw)
+                engine_used = "ICICI Bank Statement Special Extractor"
+            elif selected_engine == "Axis Bank Statement" or (selected_engine == "Auto Multi-Engine Pipeline" and card.get("pdf_type") == "Axis Bank Statement"):
+                from backend.extractors.candidate_extractors import run_axis_extractor
+                raw = run_axis_extractor(pdf_path)
+                validated_txs, summary = validate_and_enrich_transactions(raw)
+                engine_used = "Axis Bank Statement Special Extractor"
+            elif selected_engine == "IndusInd Bank Statement" or (selected_engine == "Auto Multi-Engine Pipeline" and card.get("pdf_type") == "IndusInd Bank Statement"):
+                from backend.extractors.candidate_extractors import run_indusind_extractor
+                raw = run_indusind_extractor(pdf_path)
+                validated_txs, summary = validate_and_enrich_transactions(raw)
+                engine_used = "IndusInd Bank Statement Special Extractor"
+            elif selected_engine == "HDFC Bank Statement" or (selected_engine == "Auto Multi-Engine Pipeline" and card.get("pdf_type") == "HDFC Bank Statement"):
+                from backend.extractors.candidate_extractors import run_hdfc_extractor
+                raw = run_hdfc_extractor(pdf_path)
+                validated_txs, summary = validate_and_enrich_transactions(raw)
+                engine_used = "HDFC Bank Statement Special Extractor"
+            elif "TYPE 1" in selected_engine:
                 from backend.extractors.candidate_extractors import run_pdfplumber_tables, run_pdfplumber_words, run_noisy_digital_extractor
                 raw = run_pdfplumber_tables(pdf_path)
                 if not raw:
@@ -383,9 +211,40 @@ class StatementService:
                     raw = run_noisy_digital_extractor(pdf_path)
                 validated_txs, summary = validate_and_enrich_transactions(raw)
                 engine_used = "TYPE 1: Native Digital PDF Pipeline"
+            elif "TYPE 2" in selected_engine:
+                from backend.extractors.candidate_extractors import run_robust_ocr_extractor, run_noisy_digital_extractor
+                raw = run_noisy_digital_extractor(pdf_path) or run_robust_ocr_extractor(pdf_path)
+                validated_txs, summary = validate_and_enrich_transactions(raw)
+                engine_used = "TYPE 2: OCR Searchable PDF Pipeline"
+            elif "TYPE 3" in selected_engine:
+                from backend.extractors.candidate_extractors import run_robust_ocr_extractor
+                raw = run_robust_ocr_extractor(pdf_path)
+                validated_txs, summary = validate_and_enrich_transactions(raw)
+                engine_used = "TYPE 3: Scanned PDF OCR Pipeline"
 
 
+            elif selected_engine == "Method 1: Spatial Bounding-Box Layout Clustering + PP-OCRv4 (Recommended #1)":
+                from backend.extractors.candidate_extractors import run_spatial_ocr_extractor
+                raw = run_spatial_ocr_extractor(pdf_path)
+                validated_txs, summary = validate_and_enrich_transactions(raw)
+                engine_used = "Method 1: Spatial Bounding-Box Layout Clustering + PP-OCRv4"
+            elif selected_engine == "Method 2: OpenCV Morphological Grid Line Cleaning + Cell Isolation":
+                from backend.extractors.candidate_extractors import run_opencv_grid_extractor
+                raw = run_opencv_grid_extractor(pdf_path)
+                validated_txs, summary = validate_and_enrich_transactions(raw)
+                engine_used = "Method 2: OpenCV Morphological Grid Line Cleaning + Cell Isolation"
+            elif selected_engine == "Method 3: Local Compact Vision Model (Florence-2-base / Qwen2-VL)":
+                from backend.extractors.candidate_extractors import run_local_vision_extractor
+                raw = run_local_vision_extractor(pdf_path)
+                validated_txs, summary = validate_and_enrich_transactions(raw)
+                engine_used = "Method 3: Local Compact Vision Model (Florence-2-base / Qwen2-VL)"
 
+            elif selected_engine == "PaddleOCR Engine (PP-OCRv4)":
+
+                from backend.extractors.candidate_extractors import run_paddleocr_extractor
+                raw = run_paddleocr_extractor(pdf_path)
+                validated_txs, summary = validate_and_enrich_transactions(raw)
+                engine_used = "PaddleOCR Engine (PP-OCRv4)"
             elif selected_engine == "Camelot Lattice":
                 raw = run_camelot_lattice(pdf_path)
                 validated_txs, summary = validate_and_enrich_transactions(raw)
@@ -430,7 +289,6 @@ class StatementService:
                 "summary": {"total_count": 0, "pass_count": 0, "failed_count": 0, "is_valid": False},
                 "diagnostics": diagnostics or {"selected_method": selected_engine, "selection_reason": str(e)}
             }
-            self.save_card_to_disk(card)
             self.extraction_results[file_id] = result
             return result
 
@@ -450,7 +308,6 @@ class StatementService:
         card["confidence_score"] = conf_score
         card["extraction_method"] = engine_used
         card["validation_status"] = "OK" if not is_failsafe else "Errors"
-        self.save_card_to_disk(card)
 
         result = {
             "file_id": file_id,
@@ -467,7 +324,7 @@ class StatementService:
         }
 
         self.extraction_results[file_id] = result
-        self.save_result_to_disk(file_id, result)
+        self._save_json_disk(os.path.join(self.results_dir, f"{file_id}_result.json"), result)
 
         # Log process entry
         log_entry = {
@@ -506,20 +363,25 @@ class StatementService:
         return self.extract_file(file_id, engine_override=preferred_engine)
 
     def generate_export(self, file_ids: List[str], export_format: str = "xlsx") -> str:
-        exportable_results = []
+        successful_results = []
         for fid in file_ids:
-            # Prefer in-memory, then fall back to disk
-            result = self.extraction_results.get(fid) or self.load_result_from_disk(fid)
-            if result:
-                # Cache back into memory if restored from disk
-                if fid not in self.extraction_results:
-                    self.extraction_results[fid] = result
-                # Export if transactions exist (allow partial/failsafe results too)
-                if result.get("transactions"):
-                    exportable_results.append(result)
+            res = self.extraction_results.get(fid)
+            if not res:
+                res = self._load_json_disk(os.path.join(self.results_dir, f"{fid}_result.json"))
+                if isinstance(res, dict):
+                    self.extraction_results[fid] = res
 
-        if not exportable_results:
-            raise ValueError("No extracted data available for export. Please run extraction first.")
+            if not res or not res.get("success"):
+                try:
+                    res = self.extract_file(fid)
+                except Exception as ex:
+                    logger.warning(f"Auto-extraction during export failed for {fid}: {ex}")
+
+            if res and res.get("success"):
+                successful_results.append(res)
+
+        if not successful_results:
+            raise ValueError("No extracted data available for export. Please extract your PDF statement before exporting.")
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"Excelo_Export_{timestamp}.{export_format}"
@@ -527,19 +389,44 @@ class StatementService:
 
         if export_format == "csv":
             all_txs = []
-            for res in exportable_results:
+            for res in successful_results:
                 all_txs.extend(res["transactions"])
             generate_csv(all_txs, filepath)
         else:
             sheet_map = {}
-            for res in exportable_results:
+            for res in successful_results:
                 fname_clean = res["filename"][:25].replace(".pdf", "")
                 sheet_map[fname_clean] = res["transactions"]
             generate_excel_workbook(sheet_map, filepath)
 
-        return filename
 
+        return filepath
 
+    def update_settings(self, new_settings: Dict[str, Any]) -> Dict[str, Any]:
+        self.settings.update(new_settings)
+        self._save_settings_to_disk()
+        return self.settings
+
+    def _load_settings_from_disk(self):
+        try:
+            if os.path.exists(self.settings_file):
+                import json
+                with open(self.settings_file, "r", encoding="utf-8") as f:
+                    saved = json.load(f)
+                    if isinstance(saved, dict):
+                        self.settings.update(saved)
+                        logger.info("Loaded persistent settings from settings.json")
+        except Exception as e:
+            logger.warning(f"Could not load settings.json: {e}")
+
+    def _save_settings_to_disk(self):
+        try:
+            import json
+            with open(self.settings_file, "w", encoding="utf-8") as f:
+                json.dump(self.settings, f, indent=2)
+                logger.info("Saved persistent settings to settings.json")
+        except Exception as e:
+            logger.error(f"Could not save settings.json: {e}")
 
     def get_logs(self) -> List[Dict[str, Any]]:
         return self.process_logs

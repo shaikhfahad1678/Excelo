@@ -10,7 +10,13 @@ Calculates composite extraction quality scores and retries fallback engines unti
 from typing import List, Dict, Any, Tuple
 from backend.extractors.pdf_classifier import (
     classify_pdf_type,
-    TYPE_DIGITAL
+    TYPE_DIGITAL,
+    TYPE_OCR_SEARCHABLE,
+    TYPE_SCANNED,
+    TYPE_HDFC,
+    TYPE_INDUSIND,
+    TYPE_AXIS,
+    TYPE_ICICI
 )
 from backend.extractors.candidate_extractors import (
     run_camelot_lattice,
@@ -19,7 +25,8 @@ from backend.extractors.candidate_extractors import (
     run_pdfplumber_words,
     run_tabula,
     run_noisy_digital_extractor,
-    run_pypdf_fast_lines
+    run_robust_ocr_extractor,
+    run_paddleocr_extractor
 )
 from backend.validators.strict_validator import validate_and_enrich_transactions
 from backend.utils.logger import logger
@@ -57,6 +64,45 @@ def execute_intelligent_pipeline(pdf_path: str) -> Tuple[List[Dict[str, Any]], s
     pdf_type, class_meta = classify_pdf_type(pdf_path)
     logger.info(f"Initiating pipeline for [{pdf_path}] classified as: {pdf_type}")
 
+    # Streamlined fast non-blocking candidate order based on PDF Type
+    if pdf_type == TYPE_ICICI:
+        from backend.extractors.candidate_extractors import run_icici_extractor
+        candidate_sequence = [
+            ("ICICI Bank Special Extractor", run_icici_extractor)
+        ]
+    elif pdf_type == TYPE_AXIS:
+        from backend.extractors.candidate_extractors import run_axis_extractor
+        candidate_sequence = [
+            ("Axis Bank Special Extractor", run_axis_extractor)
+        ]
+    elif pdf_type == TYPE_INDUSIND:
+        from backend.extractors.candidate_extractors import run_indusind_extractor
+        candidate_sequence = [
+            ("IndusInd Bank Special Extractor", run_indusind_extractor)
+        ]
+    elif pdf_type == TYPE_HDFC:
+        from backend.extractors.candidate_extractors import run_hdfc_extractor
+        candidate_sequence = [
+            ("HDFC Bank Special Extractor", run_hdfc_extractor)
+        ]
+    elif pdf_type == TYPE_DIGITAL:
+        candidate_sequence = [
+            ("pdfplumber Tables", run_pdfplumber_tables),
+            ("pdfplumber Words (Spatial)", run_pdfplumber_words),
+            ("Noisy Digital Extractor", run_noisy_digital_extractor)
+        ]
+    elif pdf_type == TYPE_OCR_SEARCHABLE:
+        candidate_sequence = [
+            ("pdfplumber Words (Spatial)", run_pdfplumber_words),
+            ("Noisy Digital Extractor", run_noisy_digital_extractor),
+            ("Robust OCR Engine", run_robust_ocr_extractor)
+        ]
+    else: # TYPE_SCANNED
+        candidate_sequence = [
+            ("Robust OCR Engine", run_robust_ocr_extractor),
+            ("PaddleOCR Engine (PP-OCRv4)", run_paddleocr_extractor)
+        ]
+
     diagnostics = {
         "pdf_path": pdf_path,
         "pdf_type": pdf_type,
@@ -67,19 +113,6 @@ def execute_intelligent_pipeline(pdf_path: str) -> Tuple[List[Dict[str, Any]], s
         "selection_reason": "No candidate strategy passed strict validation.",
         "is_failsafe_triggered": False
     }
-
-    if pdf_type != TYPE_DIGITAL:
-        diagnostics["selection_reason"] = "Only native digital statements are supported. Please upload a digital PDF."
-        diagnostics["is_failsafe_triggered"] = True
-        logger.warning(f"Pipeline rejected non-digital PDF [{pdf_path}]")
-        return [], "None", diagnostics
-
-    candidate_sequence = [
-        ("Fast PyPDF Line Extractor", run_pypdf_fast_lines),
-        ("pdfplumber Tables", run_pdfplumber_tables),
-        ("pdfplumber Words (Spatial)", run_pdfplumber_words),
-        ("Noisy Digital Extractor", run_noisy_digital_extractor)
-    ]
 
     all_candidate_results = []
 
