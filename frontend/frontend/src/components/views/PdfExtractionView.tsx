@@ -18,7 +18,7 @@ import { TableViewer } from '../ui/TableViewer';
 interface PdfExtractionViewProps {
   files: FileCard[];
   onUploadFiles: (e: React.ChangeEvent<HTMLInputElement> | React.DragEvent) => void;
-  onLoadSample: () => void;
+  onLoadSample?: () => void;
   onRemoveFile: (id: string) => void;
   onExtractFiles: (fileIds: string[], engineOverrides?: Record<string, string>, engineOverride?: string) => void;
   onRetryFile: (fileId: string, preferredEngine: string) => void;
