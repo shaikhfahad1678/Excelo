@@ -5,6 +5,7 @@ Manages file registration, pipeline execution, settings, and exports.
 import os
 import time
 import uuid
+import tempfile
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from backend.extractors.pdf_classifier import classify_pdf_type
@@ -26,17 +27,42 @@ FAILSAFE_WARNING_MSG = (
     "Every candidate strategy was evaluated. The current row accuracy or balance validation rate fell below the 98% threshold limit."
 )
 
+def _resolve_workspace_dir(custom_dir: Optional[str] = None) -> str:
+    if custom_dir:
+        try:
+            os.makedirs(custom_dir, exist_ok=True)
+            return custom_dir
+        except Exception:
+            pass
+
+    # If running on Vercel / serverless environment where disk is read-only except /tmp
+    if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        tmp = os.path.join(tempfile.gettempdir(), "excelo")
+        os.makedirs(tmp, exist_ok=True)
+        return tmp
+
+    # Standard relative workspace resolution based on current project root
+    try:
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        test_data = os.path.join(project_root, "data")
+        os.makedirs(test_data, exist_ok=True)
+        return project_root
+    except Exception:
+        tmp = os.path.join(tempfile.gettempdir(), "excelo")
+        os.makedirs(tmp, exist_ok=True)
+        return tmp
+
 class StatementService:
-    def __init__(self, workspace_dir: str = "c:/Fahad/excelo"):
-        self.workspace_dir = workspace_dir
-        self.upload_dir = os.path.join(workspace_dir, "data", "uploads")
-        self.export_dir = os.path.join(workspace_dir, "data", "exports")
-        self.results_dir = os.path.join(workspace_dir, "data", "results")
+    def __init__(self, workspace_dir: Optional[str] = None):
+        self.workspace_dir = _resolve_workspace_dir(workspace_dir)
+        self.upload_dir = os.path.join(self.workspace_dir, "data", "uploads")
+        self.export_dir = os.path.join(self.workspace_dir, "data", "exports")
+        self.results_dir = os.path.join(self.workspace_dir, "data", "results")
         os.makedirs(self.upload_dir, exist_ok=True)
         os.makedirs(self.export_dir, exist_ok=True)
         os.makedirs(self.results_dir, exist_ok=True)
 
-        self.settings_file = os.path.join(workspace_dir, "data", "settings.json")
+        self.settings_file = os.path.join(self.workspace_dir, "data", "settings.json")
 
         self.file_cards: Dict[str, Dict[str, Any]] = {}
         self.extraction_results: Dict[str, Dict[str, Any]] = {}
@@ -341,7 +367,7 @@ class StatementService:
             generate_excel_workbook(sheet_map, filepath)
 
 
-        return filepath
+        return filename
 
     def update_settings(self, new_settings: Dict[str, Any]) -> Dict[str, Any]:
         self.settings.update(new_settings)

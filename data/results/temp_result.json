@@ -1,0 +1,27 @@
+{
+  "file_id": "temp",
+  "filename": "test.pdf",
+  "pdf_type": "TYPE 1: Native Digital PDF",
+  "success": false,
+  "engine_used": "None",
+  "processing_time": 0.5,
+  "confidence_score": 0.0,
+  "failsafe_warning": "Fail Safe Warning \u2014 Action Required\nExtraction quality is below acceptable level. Automatic retries completed. Manual review required.\nEvery candidate strategy was evaluated. The current row accuracy or balance validation rate fell below the 98% threshold limit.",
+  "transactions": [],
+  "summary": {},
+  "diagnostics": {
+    "pdf_path": "C:\\Users\\yahya\\.gemini\\antigravity-ide\\brain\\032b76b5-1068-4cac-b554-d8057ecb793d\\media__1786096262532.pdf",
+    "pdf_type": "Unknown PDF Type",
+    "classification_meta": {
+      "total_pages": 75,
+      "pages_with_text": 2,
+      "avg_text_per_page": 3222.5,
+      "pdf_type": "Unknown PDF Type"
+    },
+    "candidates": [],
+    "attempted_methods": [],
+    "selected_method": "None",
+    "selection_reason": "Unsupported PDF type. Please provide an HDFC, Axis, ICICI, or IndusInd bank statement.",
+    "is_failsafe_triggered": true
+  }
+}
