@@ -72,12 +72,6 @@ export function App() {
         ...uploadedCards
       ]);
       showToast(`Registered ${uploadedCards.length} PDF statement(s).`);
-
-      // Instant analysis & extraction execution upon upload
-      const newIds = uploadedCards.filter(c => c.status === 'Ready').map(c => c.id);
-      if (newIds.length > 0) {
-        handleExtractFiles(newIds);
-      }
     } catch (err: any) {
       setFiles((prev) => prev.filter((f) => !f.id.startsWith('temp_')));
       showToast(err.message || 'Failed to upload files', 'error');
