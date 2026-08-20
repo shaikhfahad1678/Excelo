@@ -34,16 +34,33 @@ FAILSAFE_WARNING_MSG = (
 )
 
 class StatementService:
-    def __init__(self, workspace_dir: str = "c:/Fahad/excelo"):
-        self.workspace_dir = workspace_dir
-        self.upload_dir = os.path.join(workspace_dir, "data", "uploads")
-        self.export_dir = os.path.join(workspace_dir, "data", "exports")
-        self.results_dir = os.path.join(workspace_dir, "data", "results")
-        os.makedirs(self.upload_dir, exist_ok=True)
-        os.makedirs(self.export_dir, exist_ok=True)
-        os.makedirs(self.results_dir, exist_ok=True)
+    def __init__(self, workspace_dir: Optional[str] = None):
+        import tempfile
+        if os.environ.get("VERCEL") or not workspace_dir or not os.path.exists(str(workspace_dir)):
+            base_dir = os.path.join(tempfile.gettempdir(), "excelo_data")
+        else:
+            base_dir = str(workspace_dir)
 
-        self.settings_file = os.path.join(workspace_dir, "data", "settings.json")
+        self.workspace_dir = base_dir
+        self.upload_dir = os.path.join(base_dir, "data", "uploads")
+        self.export_dir = os.path.join(base_dir, "data", "exports")
+        self.results_dir = os.path.join(base_dir, "data", "results")
+
+        try:
+            os.makedirs(self.upload_dir, exist_ok=True)
+            os.makedirs(self.export_dir, exist_ok=True)
+            os.makedirs(self.results_dir, exist_ok=True)
+        except OSError:
+            base_dir = os.path.join(tempfile.gettempdir(), "excelo_data")
+            self.workspace_dir = base_dir
+            self.upload_dir = os.path.join(base_dir, "data", "uploads")
+            self.export_dir = os.path.join(base_dir, "data", "exports")
+            self.results_dir = os.path.join(base_dir, "data", "results")
+            os.makedirs(self.upload_dir, exist_ok=True)
+            os.makedirs(self.export_dir, exist_ok=True)
+            os.makedirs(self.results_dir, exist_ok=True)
+
+        self.settings_file = os.path.join(base_dir, "data", "settings.json")
 
         self.file_cards: Dict[str, Dict[str, Any]] = {}
         self.extraction_results: Dict[str, Dict[str, Any]] = {}
@@ -353,7 +370,7 @@ class StatementService:
                 sheet_map[fname_clean] = res["transactions"]
             generate_excel_workbook(sheet_map, filepath)
 
-        return filepath
+        return filename
 
     def get_settings(self) -> Dict[str, Any]:
         return self.settings

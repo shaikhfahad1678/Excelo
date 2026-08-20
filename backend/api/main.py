@@ -2,6 +2,14 @@
 FastAPI REST API Server for Excelo Bank Statement Processing Engine
 """
 import os
+import sys
+from pathlib import Path
+
+# Add project root directory to sys.path for Vercel Serverless environment
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, File, UploadFile, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -198,3 +206,13 @@ def delete_file_endpoint(file_id: str):
     return {"status": "success" if success else "not_found"}
 
 
+
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"status": "error", "detail": str(exc), "message": f"Server Error: {str(exc)}"}
+    )
