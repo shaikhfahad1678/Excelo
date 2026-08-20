@@ -1,14 +1,27 @@
 """
 Professional Excel Generator (.xlsx) using openpyxl & pandas
 Includes bold headers, Sr No. column, frozen top row, auto-fit column widths,
-numeric/date formatting, auto-filters, and conditional status highlighting.
+numeric/date formatting, and auto-filters.
 """
+import re
 from typing import List, Dict, Any
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
 from backend.utils.logger import logger
+
+import json
+ILLEGAL_CHARACTERS_RE = re.compile(r'[\x00-\x08\x0B-\x0C\x0E-\x1F]')
+
+def sanitize_value(val: Any) -> Any:
+    if val is None:
+        return ""
+    if isinstance(val, (dict, list)):
+        return json.dumps(val) if val else ""
+    if isinstance(val, str):
+        return ILLEGAL_CHARACTERS_RE.sub('', val)
+    return val
 
 def generate_excel_workbook(
     sheet_data_map: Dict[str, List[Dict[str, Any]]],
@@ -18,6 +31,7 @@ def generate_excel_workbook(
     Generates a professionally styled Excel workbook.
     Adds `Sr No.` as column 1 (numbered sequentially 1..N across all pages).
     `sheet_data_map` maps sheet names to list of transaction dicts.
+    Excludes internal validation status and confidence columns for clean financial presentation.
     """
     wb = openpyxl.Workbook()
     wb.remove(wb.active) # Remove default sheet
@@ -27,28 +41,12 @@ def generate_excel_workbook(
     
     alt_row_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
     
-    # Conditional Status Fills & Fonts
-    status_styles = {
-        "PASS": (PatternFill(start_color="F0FDF4", end_color="F0FDF4", fill_type="solid"), Font(name="Calibri", size=10, color="166534")),
-        "LOW CONFIDENCE": (PatternFill(start_color="FEFCE8", end_color="FEFCE8", fill_type="solid"), Font(name="Calibri", size=10, color="854D0E")),
-        "RECONSTRUCTED": (PatternFill(start_color="EFF6FF", end_color="EFF6FF", fill_type="solid"), Font(name="Calibri", size=10, color="1E40AF")),
-        "FAILED VALIDATION": (PatternFill(start_color="FEF2F2", end_color="FEF2F2", fill_type="solid"), Font(name="Calibri", size=10, color="991B1B")),
-        "MISSING DATA": (PatternFill(start_color="FFF7ED", end_color="FFF7ED", fill_type="solid"), Font(name="Calibri", size=10, color="9A3412")),
-        "DUPLICATE": (PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid"), Font(name="Calibri", size=10, color="475569")),
-        "BALANCE MISMATCH": (PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid"), Font(name="Calibri", size=10, color="991B1B", bold=True)),
-    }
-
     thin_border = Border(
         left=Side(style='thin', color='E2E8F0'),
         right=Side(style='thin', color='E2E8F0'),
         top=Side(style='thin', color='E2E8F0'),
         bottom=Side(style='thin', color='E2E8F0')
     )
-
-    columns_order = [
-        "Sr No.", "Date", "Description", "Cheque No.",
-        "Debit", "Credit", "Balance", "Validation Status"
-    ]
 
     global_sr_no = 1
 
@@ -58,6 +56,26 @@ def generate_excel_workbook(
 
         # Freeze top row
         ws.freeze_panes = "A2"
+
+        # Dynamically discover all unique keys in the transactions excluding internal metadata
+        all_keys = []
+        for tx in transactions:
+            for k in tx.keys():
+                if k not in all_keys and k not in [
+                    "Currency", "Sr No.", "Validation Status", "Validation Details",
+                    "Confidence", "diagnostics", "is_valid", "confidence_score"
+                ]:
+                    all_keys.append(k)
+
+        # Standard header priority ordering
+        columns_order = ["Sr No."]
+        std_keys = ["Date", "Description", "Cheque No.", "Ref No.", "Debit", "Credit", "Balance"]
+        for k in std_keys:
+            if k in all_keys:
+                columns_order.append(k)
+        for k in all_keys:
+            if k not in columns_order:
+                columns_order.append(k)
 
         # Write Header
         ws.append(columns_order)
@@ -69,34 +87,20 @@ def generate_excel_workbook(
 
         # Write Data
         for row_idx, tx in enumerate(transactions, start=2):
-            status = tx.get("Validation Status", "PASS")
             sr_num = tx.get("Sr No.") or global_sr_no
 
-            row_data = [
-                sr_num,
-                tx.get("Date", ""),
-                tx.get("Description", ""),
-                tx.get("Cheque No.", ""),
-                tx.get("Debit"),
-                tx.get("Credit"),
-                tx.get("Balance"),
-                status
-            ]
+            row_data = [sr_num]
+            for col_name in columns_order[1:]:
+                row_data.append(sanitize_value(tx.get(col_name, "")))
             ws.append(row_data)
             global_sr_no += 1
-
-            status_fill, status_font = status_styles.get(status, (None, None))
 
             # Apply row styling & number formatting
             for col_idx in range(1, len(columns_order) + 1):
                 cell = ws.cell(row=row_idx, column=col_idx)
                 cell.border = thin_border
 
-                if status_fill and status != "PASS":
-                    cell.fill = status_fill
-                    if status_font:
-                        cell.font = status_font
-                elif row_idx % 2 == 1:
+                if row_idx % 2 == 1:
                     cell.fill = alt_row_fill
 
                 col_name = columns_order[col_idx - 1]
@@ -106,7 +110,7 @@ def generate_excel_workbook(
                         cell.alignment = Alignment(horizontal="right", vertical="center")
                     else:
                         cell.alignment = Alignment(horizontal="center", vertical="center")
-                elif col_name in ["Sr No.", "Date", "Validation Status"]:
+                elif col_name in ["Sr No.", "Date"]:
                     cell.alignment = Alignment(horizontal="center", vertical="center")
 
         # Enable Auto-filters
@@ -125,20 +129,21 @@ def generate_excel_workbook(
             ws.column_dimensions[col_letter].width = min(max(max_len + 4, 10), 60)
 
     wb.save(output_filepath)
-    logger.info(f"Excel workbook generated successfully with Sr No. column: {output_filepath}")
+    logger.info(f"Excel workbook generated successfully without Validation Status column: {output_filepath}")
     return output_filepath
 
 def generate_csv(transactions: List[Dict[str, Any]], output_filepath: str) -> str:
-    """Exports transactions list to CSV file."""
+    """Exports transactions list to CSV file without internal validation columns."""
     cleaned_txs = []
     for tx in transactions:
         t = dict(tx)
         t.pop("Currency", None)
-        t.pop("Ref No.", None)
+        t.pop("Validation Status", None)
         t.pop("Validation Details", None)
         t.pop("Confidence", None)
+        t.pop("diagnostics", None)
         cleaned_txs.append(t)
     df = pd.DataFrame(cleaned_txs)
     df.to_csv(output_filepath, index=False)
-    logger.info(f"CSV file generated: {output_filepath}")
+    logger.info(f"CSV file generated without Validation Status: {output_filepath}")
     return output_filepath

@@ -1,6 +1,8 @@
 """
 Bank Statement Candidate Extractor Module
 Contains individual specialized candidate extractors for:
+- Union Bank Statement
+- Yes Bank Statement
 - HDFC Bank Statement
 - Axis Bank Statement
 - ICICI Bank Statement
@@ -8,6 +10,22 @@ Contains individual specialized candidate extractors for:
 """
 from typing import List, Dict, Any
 from backend.utils.logger import logger
+
+def run_union_extractor(pdf_path: str) -> List[Dict[str, Any]]:
+    try:
+        from backend.extractors.union_extractor import run_union_extractor as ext
+        return ext(pdf_path)
+    except Exception as e:
+        logger.error(f"Union Bank extractor failed: {e}")
+        return []
+
+def run_yesbank_extractor(pdf_path: str) -> List[Dict[str, Any]]:
+    try:
+        from backend.extractors.yesbank_extractor import run_yesbank_extractor as ext
+        return ext(pdf_path)
+    except Exception as e:
+        logger.error(f"Yes Bank extractor failed: {e}")
+        return []
 
 def run_hdfc_extractor(pdf_path: str) -> List[Dict[str, Any]]:
     try:

@@ -2,6 +2,9 @@ import axios from 'axios';
 import type {
   FileCard,
   ExtractionResult,
+  ProcessLog,
+  HistoryItem,
+  Settings,
   Transaction,
   Summary
 } from '../types';
@@ -22,7 +25,10 @@ export const uploadFiles = async (files: File[]): Promise<FileCard[]> => {
   return res.data.files;
 };
 
-
+export const generateSamplePdf = async (): Promise<FileCard> => {
+  const res = await api.post('/sample');
+  return res.data.file;
+};
 
 export const extractPdf = async (
   fileIds: string[],
@@ -60,23 +66,64 @@ export const retryExtraction = async (
 export const generateExcel = async (
   fileIds: string[],
   format: 'xlsx' | 'csv' = 'xlsx'
-): Promise<{ blob: Blob; filename: string }> => {
-  // Step 1: request export generation — gets back a filename
+): Promise<{ download_url: string; filename: string }> => {
   const res = await api.post('/generate-excel', {
     file_ids: fileIds,
     format,
   });
-  const { filename } = res.data as { download_url: string; filename: string };
 
-  // Step 2: actually fetch the file as a binary blob
-  const blobRes = await api.get(`/download/${encodeURIComponent(filename)}`, {
-    responseType: 'blob',
-  });
+  const { download_url, filename } = res.data;
+  if (download_url) {
+    try {
+      const endpoint = download_url.replace(/^\/api/, '');
+      const fileRes = await api.get(endpoint, { responseType: 'blob' });
+      const mimeType =
+        format === 'csv'
+          ? 'text/csv;charset=utf-8;'
+          : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      const blob = new Blob([fileRes.data], { type: mimeType });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename || `Excelo_Export.${format}`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Blob download fallback:', err);
+      const link = document.createElement('a');
+      link.href = download_url;
+      link.setAttribute('download', filename || `Excelo_Export.${format}`);
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  }
 
-  return { blob: blobRes.data, filename };
+  return res.data;
 };
 
+export const fetchLogs = async (): Promise<ProcessLog[]> => {
+  const res = await api.get('/logs');
+  return res.data.logs;
+};
 
+export const fetchHistory = async (): Promise<HistoryItem[]> => {
+  const res = await api.get('/history');
+  return res.data.history;
+};
+
+export const fetchSettings = async (): Promise<Settings> => {
+  const res = await api.get('/settings');
+  return res.data.settings;
+};
+
+export const updateSettings = async (settings: Settings): Promise<Settings> => {
+  const res = await api.post('/settings', settings);
+  return res.data.settings;
+};
 
 export const checkHealth = async (): Promise<boolean> => {
   try {
@@ -93,34 +140,4 @@ export const fetchFileStatus = async (
   const res = await api.get(`/files/${fileId}/status`);
   return res.data;
 };
-
-export const deleteFile = async (fileId: string): Promise<boolean> => {
-  try {
-    const res = await api.delete(`/files/${fileId}`);
-    return res.data.status === 'success';
-  } catch (err) {
-    return false;
-  }
-};
-
-export const checkCloudflareStatus = async (): Promise<{
-  configured: boolean;
-  connected: boolean;
-  status: string;
-  message: string;
-  bucket?: string;
-}> => {
-  try {
-    const res = await api.get('/cloudflare/status');
-    return res.data;
-  } catch (err: any) {
-    return {
-      configured: false,
-      connected: false,
-      status: 'Error',
-      message: err.message || 'Failed to query Cloudflare status',
-    };
-  }
-};
-
 

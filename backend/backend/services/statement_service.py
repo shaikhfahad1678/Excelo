@@ -1,15 +1,22 @@
 """
 Bank Statement Extraction & Processing Service
-Manages file registration, pipeline execution, settings, and exports.
+Manages file registration, pipeline execution, settings, and exports exclusively for:
+- Union Bank Statement
+- Yes Bank Statement
+- HDFC Bank Statement
+- Axis Bank Statement
+- ICICI Bank Statement
+- IndusInd Bank Statement
 """
 import os
 import time
 import uuid
-import tempfile
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from backend.extractors.pdf_classifier import classify_pdf_type
 from backend.extractors.candidate_extractors import (
+    run_union_extractor,
+    run_yesbank_extractor,
     run_hdfc_extractor,
     run_axis_extractor,
     run_icici_extractor,
@@ -18,7 +25,6 @@ from backend.extractors.candidate_extractors import (
 from backend.extractors.pipeline import execute_intelligent_pipeline
 from backend.validators.strict_validator import validate_and_enrich_transactions
 from backend.excel.writer import generate_excel_workbook, generate_csv
-
 from backend.utils.logger import logger
 
 FAILSAFE_WARNING_MSG = (
@@ -27,42 +33,17 @@ FAILSAFE_WARNING_MSG = (
     "Every candidate strategy was evaluated. The current row accuracy or balance validation rate fell below the 98% threshold limit."
 )
 
-def _resolve_workspace_dir(custom_dir: Optional[str] = None) -> str:
-    if custom_dir:
-        try:
-            os.makedirs(custom_dir, exist_ok=True)
-            return custom_dir
-        except Exception:
-            pass
-
-    # If running on Vercel / serverless environment where disk is read-only except /tmp
-    if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-        tmp = os.path.join(tempfile.gettempdir(), "excelo")
-        os.makedirs(tmp, exist_ok=True)
-        return tmp
-
-    # Standard relative workspace resolution based on current project root
-    try:
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-        test_data = os.path.join(project_root, "data")
-        os.makedirs(test_data, exist_ok=True)
-        return project_root
-    except Exception:
-        tmp = os.path.join(tempfile.gettempdir(), "excelo")
-        os.makedirs(tmp, exist_ok=True)
-        return tmp
-
 class StatementService:
-    def __init__(self, workspace_dir: Optional[str] = None):
-        self.workspace_dir = _resolve_workspace_dir(workspace_dir)
-        self.upload_dir = os.path.join(self.workspace_dir, "data", "uploads")
-        self.export_dir = os.path.join(self.workspace_dir, "data", "exports")
-        self.results_dir = os.path.join(self.workspace_dir, "data", "results")
+    def __init__(self, workspace_dir: str = "c:/Fahad/excelo"):
+        self.workspace_dir = workspace_dir
+        self.upload_dir = os.path.join(workspace_dir, "data", "uploads")
+        self.export_dir = os.path.join(workspace_dir, "data", "exports")
+        self.results_dir = os.path.join(workspace_dir, "data", "results")
         os.makedirs(self.upload_dir, exist_ok=True)
         os.makedirs(self.export_dir, exist_ok=True)
         os.makedirs(self.results_dir, exist_ok=True)
 
-        self.settings_file = os.path.join(self.workspace_dir, "data", "settings.json")
+        self.settings_file = os.path.join(workspace_dir, "data", "settings.json")
 
         self.file_cards: Dict[str, Dict[str, Any]] = {}
         self.extraction_results: Dict[str, Dict[str, Any]] = {}
@@ -83,15 +64,7 @@ class StatementService:
                 "styling": "Corporate Blue",
                 "format": "xlsx"
             },
-            "batch_processing": {
-                "max_concurrent": 4,
-                "auto_export": False
-            },
-            "log_retention_days": 30,
-            "ocr_options": {
-                "enable_ocr_fallback": True,
-                "ocr_engine": "Tesseract OCR (v5.3)"
-            }
+            "log_retention_days": 30
         }
         self._load_settings_from_disk()
         self._load_cards_and_results_from_disk()
@@ -141,19 +114,29 @@ class StatementService:
 
         pdf_type, meta = classify_pdf_type(file_path)
 
+        supported_types = [
+            "Union Bank Statement",
+            "Yes Bank Statement",
+            "HDFC Bank Statement",
+            "Axis Bank Statement",
+            "ICICI Bank Statement",
+            "IndusInd Bank Statement"
+        ]
+        target_engine = pdf_type if pdf_type in supported_types else self.settings.get("preferred_engine", "Auto Multi-Engine Pipeline")
+
         card = {
             "id": file_id,
             "filename": filename,
             "file_path": file_path,
             "pdf_type": pdf_type,
-            "pages": 1,
+            "pages": meta.get("total_pages", 1),
             "file_size": f"{file_size_kb} KB",
             "status": "Ready",
-            "extraction_method": self.settings["preferred_engine"],
+            "extraction_method": target_engine,
             "progress": 0,
             "confidence_score": 0.0,
             "validation_status": "Pending",
-            "detect_msg": f"Statement classified as {pdf_type}",
+            "detect_msg": f"Auto-detected as {pdf_type}",
             "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
 
@@ -167,7 +150,6 @@ class StatementService:
             if isinstance(card_data, dict):
                 self.file_cards[file_id] = card_data
             else:
-                # Try finding uploaded file on disk
                 import glob
                 matches = glob.glob(os.path.join(self.upload_dir, f"{file_id}_*"))
                 if matches:
@@ -200,30 +182,33 @@ class StatementService:
         start_time = time.time()
 
         selected_engine = engine_override or self.settings["preferred_engine"]
-
         engine_used = selected_engine
         diagnostics = {}
         validated_txs = []
         summary = {}
 
         try:
-            if selected_engine == "ICICI Bank Statement" or (selected_engine == "Auto Multi-Engine Pipeline" and card.get("pdf_type") == "ICICI Bank Statement"):
-                from backend.extractors.candidate_extractors import run_icici_extractor
+            if selected_engine == "Union Bank Statement" or (selected_engine == "Auto Multi-Engine Pipeline" and card.get("pdf_type") == "Union Bank Statement"):
+                raw = run_union_extractor(pdf_path)
+                validated_txs, summary = validate_and_enrich_transactions(raw)
+                engine_used = "Union Bank Statement Special Extractor"
+            elif selected_engine == "Yes Bank Statement" or (selected_engine == "Auto Multi-Engine Pipeline" and card.get("pdf_type") == "Yes Bank Statement"):
+                raw = run_yesbank_extractor(pdf_path)
+                validated_txs, summary = validate_and_enrich_transactions(raw)
+                engine_used = "Yes Bank Statement Special Extractor"
+            elif selected_engine == "ICICI Bank Statement" or (selected_engine == "Auto Multi-Engine Pipeline" and card.get("pdf_type") == "ICICI Bank Statement"):
                 raw = run_icici_extractor(pdf_path)
                 validated_txs, summary = validate_and_enrich_transactions(raw)
                 engine_used = "ICICI Bank Statement Special Extractor"
             elif selected_engine == "Axis Bank Statement" or (selected_engine == "Auto Multi-Engine Pipeline" and card.get("pdf_type") == "Axis Bank Statement"):
-                from backend.extractors.candidate_extractors import run_axis_extractor
                 raw = run_axis_extractor(pdf_path)
                 validated_txs, summary = validate_and_enrich_transactions(raw)
                 engine_used = "Axis Bank Statement Special Extractor"
             elif selected_engine == "IndusInd Bank Statement" or (selected_engine == "Auto Multi-Engine Pipeline" and card.get("pdf_type") == "IndusInd Bank Statement"):
-                from backend.extractors.candidate_extractors import run_indusind_extractor
                 raw = run_indusind_extractor(pdf_path)
                 validated_txs, summary = validate_and_enrich_transactions(raw)
                 engine_used = "IndusInd Bank Statement Special Extractor"
             elif selected_engine == "HDFC Bank Statement" or (selected_engine == "Auto Multi-Engine Pipeline" and card.get("pdf_type") == "HDFC Bank Statement"):
-                from backend.extractors.candidate_extractors import run_hdfc_extractor
                 raw = run_hdfc_extractor(pdf_path)
                 validated_txs, summary = validate_and_enrich_transactions(raw)
                 engine_used = "HDFC Bank Statement Special Extractor"
@@ -293,7 +278,6 @@ class StatementService:
         self.extraction_results[file_id] = result
         self._save_json_disk(os.path.join(self.results_dir, f"{file_id}_result.json"), result)
 
-        # Log process entry
         log_entry = {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "pdf_name": card["filename"],
@@ -310,7 +294,6 @@ class StatementService:
         }
         self.process_logs.insert(0, log_entry)
 
-        # Store history record
         history_record = {
             "session_id": str(uuid.uuid4())[:8],
             "file_id": file_id,
@@ -366,8 +349,10 @@ class StatementService:
                 sheet_map[fname_clean] = res["transactions"]
             generate_excel_workbook(sheet_map, filepath)
 
+        return filepath
 
-        return filename
+    def get_settings(self) -> Dict[str, Any]:
+        return self.settings
 
     def update_settings(self, new_settings: Dict[str, Any]) -> Dict[str, Any]:
         self.settings.update(new_settings)

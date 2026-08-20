@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   FileSpreadsheet,
-  Layers,
   Settings as SettingsIcon,
   ShieldCheck,
   Scan
@@ -19,7 +18,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems = [
     { id: 'extraction', label: 'PDF Extraction', icon: FileSpreadsheet },
     { id: 'scanned', label: 'Scanned OCR Workspace', icon: Scan },
-    { id: 'batch', label: 'Batch Processing', icon: Layers },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ];
 

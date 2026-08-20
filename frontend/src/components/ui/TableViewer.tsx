@@ -3,14 +3,12 @@ import {
   Search,
   ArrowUpDown,
   Download,
-  Filter,
-  CheckCircle,
-  XCircle,
-  AlertTriangle,
-  Copy,
-  FileCheck,
   Edit2,
-  Check
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  FileSpreadsheet
 } from 'lucide-react';
 import type { Transaction } from '../../types';
 
@@ -31,9 +29,58 @@ export const TableViewer: React.FC<TableViewerProps> = ({
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortAsc, setSortAsc] = useState(true);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [selectedCell, setSelectedCell] = useState<{ row: number; colKey: string; colLetter: string } | null>({
+    row: 0,
+    colKey: 'Description',
+    colLetter: 'C'
+  });
   const [editingRowIndex, setEditingRowIndex] = useState<number | null>(null);
   const [editingRowData, setEditingRowData] = useState<Transaction | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
+
+  // Dynamically calculate column headers from data keys
+  const tableHeaders = useMemo(() => {
+    if (transactions.length === 0) return [];
+    
+    const keys = new Set<string>();
+    transactions.forEach((tx) => {
+      Object.keys(tx).forEach((k) => {
+        if (
+          k !== 'Currency' && 
+          k !== 'Validation Status' && 
+          k !== 'Sr No.' && 
+          k !== 'Sr. No.' && 
+          k !== 'Sr No' && 
+          k !== 'S.No.' && 
+          k !== 'S.No' && 
+          k !== 'Confidence' &&
+          k !== 'Validation Details'
+        ) {
+          keys.add(k);
+        }
+      });
+    });
+
+    const stdKeys = ['Date', 'Description', 'Cheque No.', 'Ref No.', 'Debit', 'Credit', 'Balance'];
+    const isStandard = Array.from(keys).every((k) => stdKeys.includes(k));
+
+    if (isStandard) {
+      return stdKeys.filter((k) => keys.has(k) || k === 'Cheque No.' || k === 'Ref No.');
+    }
+    
+    return Array.from(keys);
+  }, [transactions]);
+
+  // Excel column letters helper
+  const columnLetters = useMemo(() => {
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M'];
+    const mapping: Record<string, string> = { 'Sr No.': 'A' };
+    tableHeaders.forEach((h, idx) => {
+      mapping[h] = letters[idx + 1] || String.fromCharCode(66 + idx);
+    });
+    mapping['Validation Status'] = letters[tableHeaders.length + 1] || 'Z';
+    return mapping;
+  }, [tableHeaders]);
 
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 25;
@@ -48,17 +95,10 @@ export const TableViewer: React.FC<TableViewerProps> = ({
 
       if (!searchTerm) return true;
       const term = searchTerm.toLowerCase();
-      return (
-        (tx['Sr No.'] && String(tx['Sr No.']).includes(term)) ||
-        (tx.Date && tx.Date.toLowerCase().includes(term)) ||
-        (tx.Description && tx.Description.toLowerCase().includes(term)) ||
-        (tx['Cheque No.'] && String(tx['Cheque No.']).toLowerCase().includes(term)) ||
-        (tx['Ref No.'] && String(tx['Ref No.']).toLowerCase().includes(term)) ||
-        (tx.Debit && String(tx.Debit).toLowerCase().includes(term)) ||
-        (tx.Credit && String(tx.Credit).toLowerCase().includes(term)) ||
-        (tx.Balance && String(tx.Balance).toLowerCase().includes(term)) ||
-        (status && status.toLowerCase().includes(term))
-      );
+      return Object.entries(tx).some(([key, val]) => {
+        if (key === 'Validation Status' || key === 'Currency') return false;
+        return val !== undefined && val !== null && String(val).toLowerCase().includes(term);
+      });
     });
   }, [transactions, searchTerm, filterStatus]);
 
@@ -82,6 +122,26 @@ export const TableViewer: React.FC<TableViewerProps> = ({
     const start = (currentPage - 1) * pageSize;
     return sortedData.slice(start, start + pageSize);
   }, [sortedData, currentPage]);
+
+  // Calculate quick summary metrics for Excel status bar
+  const ledgerMetrics = useMemo(() => {
+    let totalDebit = 0;
+    let totalCredit = 0;
+    let count = 0;
+    transactions.forEach((tx) => {
+      count++;
+      const d = parseFloat(String(tx.Debit || 0));
+      const c = parseFloat(String(tx.Credit || 0));
+      if (!isNaN(d)) totalDebit += d;
+      if (!isNaN(c)) totalCredit += c;
+    });
+    return {
+      count,
+      totalDebit,
+      totalCredit,
+      netSum: totalCredit - totalDebit
+    };
+  }, [transactions]);
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -125,214 +185,191 @@ export const TableViewer: React.FC<TableViewerProps> = ({
     }
   };
 
-  const renderStatusBadge = (status: string = 'PASS') => {
-    switch (status) {
-      case 'PASS':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-            <CheckCircle className="w-3 h-3 text-emerald-600" /> PASS
-          </span>
-        );
-      case 'LOW CONFIDENCE':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-            <AlertTriangle className="w-3 h-3 text-amber-600" /> LOW CONFIDENCE
-          </span>
-        );
-      case 'RECONSTRUCTED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
-            <FileCheck className="w-3 h-3 text-blue-600" /> RECONSTRUCTED
-          </span>
-        );
-      case 'DUPLICATE':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
-            <Copy className="w-3 h-3 text-slate-500" /> DUPLICATE
-          </span>
-        );
-      case 'BALANCE MISMATCH':
-      case 'FAILED VALIDATION':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-            <XCircle className="w-3 h-3 text-rose-600" /> {status}
-          </span>
-        );
-      case 'MISSING DATA':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200">
-            <AlertTriangle className="w-3 h-3 text-orange-600" /> MISSING DATA
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-            <CheckCircle className="w-3 h-3 text-emerald-600" /> {status}
-          </span>
-        );
-    }
-  };
+  // Get active cell value for formula bar
+  const activeCellValue = useMemo(() => {
+    if (!selectedCell) return '';
+    const activeRow = sortedData[selectedCell.row];
+    if (!activeRow) return '';
+    if (selectedCell.colKey === 'Sr No.') return String(activeRow['Sr No.'] || selectedCell.row + 1);
+    return String(activeRow[selectedCell.colKey] ?? '');
+  }, [selectedCell, sortedData]);
+
+  const activeCellCoord = selectedCell
+    ? `${selectedCell.colLetter}${selectedCell.row + 2}`
+    : 'A1';
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col h-full">
-      <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-3 flex-1 min-w-[280px]">
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+    <div className="bg-white rounded-xl border border-neutral-300 shadow-md overflow-hidden flex flex-col font-sans select-none">
+      {/* Streamlined Excel Formula & Action Bar */}
+      <div className="bg-[#f8f9fa] border-b border-[#d2d0ce] p-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0 text-xs">
+        {/* Left: Formula Bar */}
+        <div className="flex items-center gap-2 flex-1 min-w-[300px] max-w-xl">
+          {/* Name Box (e.g. C3) */}
+          <div className="w-14 px-2 py-1 bg-white border border-[#d2d0ce] rounded text-center font-mono font-bold text-neutral-800 text-xs shadow-2xs">
+            {activeCellCoord}
+          </div>
+
+          {/* Function Icon */}
+          <div className="flex items-center justify-center font-serif italic text-neutral-500 font-bold px-1 text-sm border-r border-[#d2d0ce] pr-2">
+            fx
+          </div>
+
+          {/* Formula / Cell Content Display & Editor */}
+          <div className="flex-1 bg-white border border-[#d2d0ce] rounded px-2.5 py-1 shadow-2xs">
             <input
               type="text"
-              placeholder="Search Sr No., date, description, amounts..."
+              readOnly={editingRowIndex === null}
+              value={editingRowIndex !== null && editingRowData && selectedCell ? (editingRowData[selectedCell.colKey] ?? '') : activeCellValue}
+              onChange={(e) => {
+                if (editingRowIndex !== null && selectedCell) {
+                  setEditingRowData((prev) => prev ? { ...prev, [selectedCell.colKey]: e.target.value } : null);
+                }
+              }}
+              placeholder="Click cell to view value"
+              className="w-full font-mono text-xs text-neutral-900 bg-transparent focus:outline-none"
+            />
+          </div>
+        </div>
+
+        {/* Right: Search, Filter & Direct Excel Export Button */}
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-neutral-400" />
+            <input
+              type="text"
+              placeholder="Filter sheet..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium text-slate-800"
+              className="pl-7 pr-2.5 py-1 text-xs bg-white border border-[#d2d0ce] rounded-lg focus:outline-none focus:border-[#107c41] w-36 font-medium text-neutral-800 placeholder-neutral-400 shadow-2xs"
             />
           </div>
 
-          <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-lg p-1 text-xs">
-            <Filter className="w-3.5 h-3.5 text-slate-400 ml-1" />
+          <div className="flex items-center gap-1 bg-white border border-[#d2d0ce] rounded-lg p-0.5 text-xs shadow-2xs">
             <button
               onClick={() => setFilterStatus('ALL')}
-              className={`px-2 py-0.5 rounded font-medium ${
+              className={`px-2 py-0.5 rounded font-medium text-[11px] ${
                 filterStatus === 'ALL'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-[#107c41] text-white font-bold'
+                  : 'text-neutral-600 hover:bg-neutral-100'
               }`}
             >
               All ({transactions.length})
             </button>
             <button
               onClick={() => setFilterStatus('PASS')}
-              className={`px-2 py-0.5 rounded font-medium ${
+              className={`px-2 py-0.5 rounded font-medium text-[11px] ${
                 filterStatus === 'PASS'
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-[#107c41] text-white font-bold'
+                  : 'text-neutral-600 hover:bg-neutral-100'
               }`}
             >
               Pass
             </button>
             <button
               onClick={() => setFilterStatus('WARNINGS')}
-              className={`px-2 py-0.5 rounded font-medium ${
+              className={`px-2 py-0.5 rounded font-medium text-[11px] ${
                 filterStatus === 'WARNINGS'
-                  ? 'bg-amber-100 text-amber-700'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-amber-600 text-white font-bold'
+                  : 'text-neutral-600 hover:bg-neutral-100'
               }`}
             >
-              Reconstructed / Low Conf
-            </button>
-            <button
-              onClick={() => setFilterStatus('FAILED')}
-              className={`px-2 py-0.5 rounded font-medium ${
-                filterStatus === 'FAILED'
-                  ? 'bg-rose-100 text-rose-700'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              Failed / Mismatch
+              Review
             </button>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2">
           {onExport && (
-            <>
-              <button
-                onClick={() => onExport('xlsx')}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-bold text-xs transition"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Export Excel (.xlsx)
-              </button>
-              <button
-                onClick={() => onExport('csv')}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-slate-800 text-white hover:bg-slate-900 font-bold text-xs transition"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Export CSV
-              </button>
-            </>
+            <button
+              onClick={() => onExport('xlsx')}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#107c41] text-white hover:bg-[#0e6b37] font-bold text-xs shadow-sm transition active:scale-95"
+              title="Download Excel Workbook (.xlsx)"
+            >
+              <Download className="w-3.5 h-3.5 text-white" />
+              Download Excel (.xlsx)
+            </button>
           )}
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto relative">
-        <table className="w-full text-left border-collapse text-xs">
-          <thead className="bg-slate-100/90 text-slate-700 font-semibold sticky top-0 z-10 border-b border-slate-200">
-            <tr>
-              <th className="p-3 w-10 text-center">
+      {/* Excel Spreadsheet Grid Table */}
+      <div className="overflow-auto relative max-h-[600px] border-b border-[#e1dfdd] bg-white">
+        <table className="w-full text-left border-collapse text-xs font-sans">
+          {/* Top Column Letters Row (A, B, C, D, E...) */}
+          <thead className="sticky top-0 z-20 bg-[#f3f2f1] text-[#605e5c] select-none">
+            <tr className="border-b border-[#d2d0ce]">
+              {/* Top-Left Select All Corner Cell */}
+              <th className="w-10 bg-[#e1dfdd] border-r border-b border-[#c8c6c4] text-center p-1 font-mono text-[10px] text-neutral-500">
                 <input
                   type="checkbox"
                   onChange={handleSelectAll}
-                  checked={
-                    selectedRows.size > 0 && selectedRows.size === sortedData.length
-                  }
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  checked={selectedRows.size > 0 && selectedRows.size === sortedData.length}
+                  className="rounded border-[#a19f9d] text-[#107c41] focus:ring-0 cursor-pointer"
                 />
+              </th>
+              <th className="w-14 bg-[#f3f2f1] border-r border-[#d2d0ce] text-center p-1 font-mono text-[11px] font-bold text-neutral-600">
+                A
+              </th>
+              {tableHeaders.map((header) => (
+                <th
+                  key={header}
+                  className="bg-[#f3f2f1] border-r border-[#d2d0ce] text-center p-1 font-mono text-[11px] font-bold text-neutral-600"
+                >
+                  {columnLetters[header] || '-'}
+                </th>
+              ))}
+              <th className="w-28 bg-[#f3f2f1] border-r border-[#d2d0ce] text-center p-1 font-mono text-[11px] font-bold text-neutral-600">
+                {columnLetters['Validation Status'] || 'H'}
+              </th>
+              <th className="w-12 bg-[#f3f2f1] border-r border-[#d2d0ce] text-center p-1 font-mono text-[11px] font-bold text-neutral-600">
+                Edit
+              </th>
+            </tr>
+
+            {/* Sub-Header Row: Actual Column Titles with Filter Dropdowns */}
+            <tr className="bg-[#e8f4ec] text-[#0e5c30] font-bold border-b-2 border-[#107c41] shadow-2xs">
+              <th className="p-2 border-r border-[#c8c6c4] text-center bg-[#dbe8df] text-neutral-700 text-[11px]">
+                #
               </th>
               <th
                 onClick={() => handleSort('Sr No.')}
-                className="p-3 w-14 text-center cursor-pointer hover:bg-slate-200/60 whitespace-nowrap"
+                className="p-2 border-r border-[#c3d9cb] text-center cursor-pointer hover:bg-[#d8edd0] transition whitespace-nowrap"
               >
                 <div className="flex items-center justify-center gap-1">
-                  Sr No.
-                  <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                  <span>Sr No.</span>
+                  <ArrowUpDown className="w-2.5 h-2.5 opacity-60" />
                 </div>
               </th>
-              <th
-                onClick={() => handleSort('Date')}
-                className="p-3 cursor-pointer hover:bg-slate-200/60 transition whitespace-nowrap"
-              >
-                <div className="flex items-center gap-1">
-                  Date
-                  <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                </div>
+              {tableHeaders.map((header) => {
+                const isNumeric = ['debit', 'credit', 'balance', 'qty', 'price', 'amount', 'total'].includes(header.toLowerCase());
+                return (
+                  <th
+                    key={header}
+                    onClick={() => handleSort(header)}
+                    className={`p-2 border-r border-[#c3d9cb] cursor-pointer hover:bg-[#d8edd0] transition whitespace-nowrap ${
+                      isNumeric ? 'text-right' : 'text-left'
+                    }`}
+                  >
+                    <div className={`flex items-center gap-1 ${isNumeric ? 'justify-end' : 'justify-start'}`}>
+                      <span>{header}</span>
+                      <ArrowUpDown className="w-2.5 h-2.5 opacity-60" />
+                    </div>
+                  </th>
+                );
+              })}
+              <th className="p-2 border-r border-[#c3d9cb] text-center whitespace-nowrap">
+                Validation Status
               </th>
-              <th
-                onClick={() => handleSort('Description')}
-                className="p-3 cursor-pointer hover:bg-slate-200/60 transition min-w-[220px]"
-              >
-                <div className="flex items-center gap-1">
-                  Description
-                  <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                </div>
+              <th className="p-2 border-r border-[#c3d9cb] text-center whitespace-nowrap">
+                Action
               </th>
-              <th className="p-3 whitespace-nowrap">Cheque No.</th>
-              <th
-                onClick={() => handleSort('Debit')}
-                className="p-3 cursor-pointer hover:bg-slate-200/60 transition text-right whitespace-nowrap"
-              >
-                <div className="flex items-center justify-end gap-1">
-                  Debit
-                  <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                </div>
-              </th>
-              <th
-                onClick={() => handleSort('Credit')}
-                className="p-3 cursor-pointer hover:bg-slate-200/60 transition text-right whitespace-nowrap"
-              >
-                <div className="flex items-center justify-end gap-1">
-                  Credit
-                  <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                </div>
-              </th>
-              <th
-                onClick={() => handleSort('Balance')}
-                className="p-3 cursor-pointer hover:bg-slate-200/60 transition text-right whitespace-nowrap"
-              >
-                <div className="flex items-center justify-end gap-1">
-                  Balance
-                  <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                </div>
-              </th>
-              <th className="p-3 text-center whitespace-nowrap">Validation Status</th>
-              <th className="p-3 text-center w-16">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 font-mono text-[11px] text-slate-800">
+
+          {/* Excel Grid Body */}
+          <tbody className="divide-y divide-[#e1dfdd] text-[11px] text-neutral-900 bg-white">
             {paginatedData.length === 0 ? (
               <tr>
-                <td colSpan={10} className="p-8 text-center text-slate-400 font-sans">
-                  No matching transaction rows found.
+                <td colSpan={tableHeaders.length + 4} className="p-12 text-center text-neutral-400 font-sans">
+                  No matching transaction rows found in ledger sheet.
                 </td>
               </tr>
             ) : (
@@ -344,147 +381,167 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                 const isFailed = status === 'FAILED VALIDATION' || status === 'BALANCE MISMATCH';
                 const isEditing = editingRowIndex === globalIndex;
                 const srNo = row['Sr No.'] || globalIndex + 1;
+                const excelRowNum = globalIndex + 2;
 
                 return (
                   <tr
                     key={globalIndex}
                     id={`tx-row-${globalIndex}`}
-                    className={`transition-colors ${
+                    className={`border-b border-[#e1dfdd] hover:bg-[#f3f9f4] transition-colors ${
                       isHighlighted
-                        ? 'bg-amber-100/90 ring-2 ring-amber-400 z-10'
+                        ? 'bg-amber-100/90'
                         : isSelected
-                        ? 'bg-blue-50/70'
+                        ? 'bg-[#e8f4ec]'
                         : isFailed
-                        ? 'bg-rose-50/60 hover:bg-rose-100/60'
-                        : status === 'LOW CONFIDENCE'
-                        ? 'bg-amber-50/50 hover:bg-amber-100/50'
+                        ? 'bg-rose-50/60'
                         : index % 2 === 0
-                        ? 'bg-white hover:bg-slate-50'
-                        : 'bg-slate-50/40 hover:bg-slate-100/50'
+                        ? 'bg-white'
+                        : 'bg-[#fafafa]'
                     }`}
                   >
-                    <td className="p-2.5 text-center">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleRowSelect(globalIndex)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
+                    {/* Left Sticky Excel Row Number */}
+                    <td className="p-1.5 text-center bg-[#f3f2f1] border-r border-[#d2d0ce] font-mono text-[11px] font-bold text-neutral-500 select-none">
+                      <div className="flex items-center justify-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleRowSelect(globalIndex)}
+                          className="rounded border-[#a19f9d] text-[#107c41] focus:ring-0"
+                        />
+                        <span>{excelRowNum}</span>
+                      </div>
                     </td>
-                    <td className="p-2.5 text-slate-500 font-bold text-center font-mono">
+
+                    {/* Column A: Sr No. */}
+                    <td
+                      onClick={() => setSelectedCell({ row: globalIndex, colKey: 'Sr No.', colLetter: 'A' })}
+                      className={`p-2 text-center border-r border-[#e1dfdd] font-mono font-medium relative ${
+                        selectedCell?.row === globalIndex && selectedCell?.colKey === 'Sr No.'
+                          ? 'ring-2 ring-[#107c41] ring-inset bg-white z-10'
+                          : ''
+                      }`}
+                    >
                       {srNo}
-                    </td>
-
-                    <td className="p-2.5 whitespace-nowrap">
-                      {isEditing ? (
-                        <input
-                          type="text"
-                          value={editingRowData?.Date || ''}
-                          onChange={(e) =>
-                            setEditingRowData((prev) =>
-                              prev ? { ...prev, Date: e.target.value } : null
-                            )
-                          }
-                          className="w-full px-1.5 py-0.5 bg-white border border-blue-400 rounded text-xs"
-                        />
-                      ) : (
-                        row.Date || '-'
+                      {selectedCell?.row === globalIndex && selectedCell?.colKey === 'Sr No.' && (
+                        <div className="w-1.5 h-1.5 bg-[#107c41] absolute -bottom-0.5 -right-0.5 border border-white" />
                       )}
                     </td>
 
-                    <td className="p-2.5 font-sans font-medium text-slate-900 leading-snug">
-                      {isEditing ? (
-                        <textarea
-                          value={editingRowData?.Description || ''}
-                          onChange={(e) =>
-                            setEditingRowData((prev) =>
-                              prev ? { ...prev, Description: e.target.value } : null
-                            )
-                          }
-                          rows={2}
-                          className="w-full px-1.5 py-0.5 bg-white border border-blue-400 rounded text-xs"
-                        />
-                      ) : (
-                        row.Description || '-'
-                      )}
-                    </td>
-
-                    <td className="p-2.5 text-slate-500 whitespace-nowrap">
-                      {row['Cheque No.'] || '-'}
-                    </td>
-
-                    <td className="p-2.5 text-right text-rose-700 font-semibold whitespace-nowrap">
-                      {isEditing ? (
-                        <input
-                          type="text"
-                          value={editingRowData?.Debit || ''}
-                          onChange={(e) =>
-                            setEditingRowData((prev) =>
-                              prev ? { ...prev, Debit: e.target.value } : null
-                            )
-                          }
-                          className="w-20 text-right px-1 py-0.5 bg-white border border-blue-400 rounded text-xs"
-                        />
-                      ) : row.Debit ? (
-                        Number(row.Debit).toLocaleString('en-US', {
+                    {/* Data Columns (B, C, D, E, F, G...) */}
+                    {tableHeaders.map((header) => {
+                      const val = row[header];
+                      const colLetter = columnLetters[header] || 'B';
+                      const isCellFocused = selectedCell?.row === globalIndex && selectedCell?.colKey === header;
+                      const isDebit = header.toLowerCase() === 'debit';
+                      const isCredit = header.toLowerCase() === 'credit';
+                      const isBalance = header.toLowerCase() === 'balance';
+                      const isNumeric = ['debit', 'credit', 'balance', 'qty', 'price', 'amount', 'total'].includes(header.toLowerCase());
+                      const isNumVal = typeof val === 'number' || (val !== undefined && val !== null && !isNaN(Number(val)) && val !== '' && !isNaN(parseFloat(val)));
+                      
+                      let displayVal = String(val ?? '');
+                      if (isNumVal && typeof val === 'number') {
+                        displayVal = val.toLocaleString('en-IN', {
                           minimumFractionDigits: 2,
-                        })
+                          maximumFractionDigits: 2
+                        });
+                      } else if (isNumVal && typeof val === 'string') {
+                        const num = parseFloat(val);
+                        if (!isNaN(num)) {
+                          displayVal = num.toLocaleString('en-IN', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          });
+                        }
+                      }
+
+                      if (header === 'Description') {
+                        return (
+                          <td
+                            key={header}
+                            onClick={() => setSelectedCell({ row: globalIndex, colKey: header, colLetter })}
+                            className={`p-2 font-sans font-medium text-neutral-900 border-r border-[#e1dfdd] min-w-[260px] relative ${
+                              isCellFocused ? 'ring-2 ring-[#107c41] ring-inset bg-white z-10' : ''
+                            }`}
+                          >
+                            {isEditing ? (
+                              <textarea
+                                value={editingRowData?.[header] || ''}
+                                onChange={(e) =>
+                                  setEditingRowData((prev) =>
+                                    prev ? { ...prev, [header]: e.target.value } : null
+                                  )
+                                }
+                                rows={2}
+                                className="w-full px-1.5 py-0.5 bg-white border border-[#107c41] rounded text-xs focus:outline-none"
+                              />
+                            ) : (
+                              val || '-'
+                            )}
+                            {isCellFocused && !isEditing && (
+                              <div className="w-1.5 h-1.5 bg-[#107c41] absolute -bottom-0.5 -right-0.5 border border-white" />
+                            )}
+                          </td>
+                        );
+                      }
+
+                      return (
+                        <td
+                          key={header}
+                          onClick={() => setSelectedCell({ row: globalIndex, colKey: header, colLetter })}
+                          className={`p-2 whitespace-nowrap border-r border-[#e1dfdd] relative ${
+                            isNumeric || isNumVal ? 'text-right font-mono' : 'text-left'
+                          } ${
+                            isCredit && isNumVal
+                              ? 'text-emerald-700 font-semibold bg-emerald-50/20'
+                              : isDebit && isNumVal
+                              ? 'text-neutral-900 font-medium'
+                              : isBalance
+                              ? 'text-neutral-900 font-bold bg-neutral-50/40'
+                              : 'text-neutral-800'
+                          } ${
+                            isCellFocused ? 'ring-2 ring-[#107c41] ring-inset bg-white z-10' : ''
+                          }`}
+                        >
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={editingRowData?.[header] || ''}
+                              onChange={(e) =>
+                                setEditingRowData((prev) =>
+                                  prev ? { ...prev, [header]: e.target.value } : null
+                                )
+                              }
+                              className="px-1.5 py-0.5 bg-white border border-[#107c41] rounded text-xs w-full text-right focus:outline-none"
+                            />
+                          ) : (
+                            displayVal || '-'
+                          )}
+                          {isCellFocused && !isEditing && (
+                            <div className="w-1.5 h-1.5 bg-[#107c41] absolute -bottom-0.5 -right-0.5 border border-white" />
+                          )}
+                        </td>
+                      );
+                    })}
+
+                    {/* Validation Status Column */}
+                    <td className="p-2 text-center border-r border-[#e1dfdd] whitespace-nowrap">
+                      {status === 'PASS' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          <Check className="w-3 h-3 text-emerald-700" /> PASS
+                        </span>
                       ) : (
-                        '-'
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                          {status}
+                        </span>
                       )}
                     </td>
 
-                    <td className="p-2.5 text-right text-emerald-700 font-semibold whitespace-nowrap">
-                      {isEditing ? (
-                        <input
-                          type="text"
-                          value={editingRowData?.Credit || ''}
-                          onChange={(e) =>
-                            setEditingRowData((prev) =>
-                              prev ? { ...prev, Credit: e.target.value } : null
-                            )
-                          }
-                          className="w-20 text-right px-1 py-0.5 bg-white border border-blue-400 rounded text-xs"
-                        />
-                      ) : row.Credit ? (
-                        Number(row.Credit).toLocaleString('en-US', {
-                          minimumFractionDigits: 2,
-                        })
-                      ) : (
-                        '-'
-                      )}
-                    </td>
-
-                    <td className="p-2.5 text-right font-bold text-slate-900 whitespace-nowrap">
-                      {isEditing ? (
-                        <input
-                          type="text"
-                          value={editingRowData?.Balance || ''}
-                          onChange={(e) =>
-                            setEditingRowData((prev) =>
-                              prev ? { ...prev, Balance: e.target.value } : null
-                            )
-                          }
-                          className="w-24 text-right px-1 py-0.5 bg-white border border-blue-400 rounded text-xs"
-                        />
-                      ) : row.Balance ? (
-                        Number(row.Balance).toLocaleString('en-US', {
-                          minimumFractionDigits: 2,
-                        })
-                      ) : (
-                        '-'
-                      )}
-                    </td>
-
-                    <td className="p-2.5 text-center font-sans whitespace-nowrap">
-                      {renderStatusBadge(status)}
-                    </td>
-
-                    <td className="p-2.5 text-center font-sans">
+                    {/* Edit Action Column */}
+                    <td className="p-2 text-center border-r border-[#e1dfdd]">
                       {isEditing ? (
                         <button
                           onClick={saveEditRow}
-                          className="p-1 bg-emerald-600 text-white rounded hover:bg-emerald-700"
+                          className="p-1 bg-[#107c41] text-white rounded hover:bg-[#0e6b37]"
                           title="Save Changes"
                         >
                           <Check className="w-3.5 h-3.5" />
@@ -492,7 +549,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                       ) : (
                         <button
                           onClick={() => startEditRow(row, globalIndex)}
-                          className="p-1 text-slate-400 hover:text-blue-600 rounded hover:bg-slate-100"
+                          className="p-1 text-neutral-400 hover:text-[#107c41] rounded hover:bg-neutral-100"
                           title="Edit Row"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -507,30 +564,68 @@ export const TableViewer: React.FC<TableViewerProps> = ({
         </table>
       </div>
 
-      <div className="p-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-600 shrink-0 font-medium">
-        <div>
-          Showing {paginatedData.length > 0 ? (currentPage - 1) * pageSize + 1 : 0} to{' '}
-          {Math.min(currentPage * pageSize, sortedData.length)} of {sortedData.length}{' '}
-          entries
+      {/* Excel Bottom Sheet Tab & Status Bar */}
+      <div className="bg-[#f3f2f1] border-t border-[#d2d0ce] px-3 py-1.5 flex flex-wrap items-center justify-between gap-3 shrink-0 text-xs text-neutral-600 select-none">
+        {/* Left: Excel Sheet Tabs */}
+        <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5 px-3 py-1 bg-white border-t-2 border-[#107c41] border-x border-[#d2d0ce] text-[#107c41] font-bold text-xs shadow-2xs rounded-t">
+            <FileSpreadsheet className="w-3.5 h-3.5 text-[#107c41]" />
+            <span>Sheet1 - Transactions</span>
+          </div>
+          <button
+            className="p-1 text-neutral-500 hover:bg-neutral-200 rounded transition"
+            title="Add New Worksheet"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
-            className="px-2.5 py-1 rounded bg-white border border-slate-300 disabled:opacity-40 hover:bg-slate-100 font-semibold"
-          >
-            Previous
-          </button>
+
+        {/* Center: Excel Metrics Calculation Summary */}
+        <div className="hidden lg:flex items-center gap-4 text-[11px] font-mono text-neutral-700 bg-white border border-[#d2d0ce] px-3 py-1 rounded">
           <span>
-            Page {currentPage} of {totalPages}
+            <strong>Rows:</strong> {ledgerMetrics.count}
           </span>
-          <button
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
-            className="px-2.5 py-1 rounded bg-white border border-slate-300 disabled:opacity-40 hover:bg-slate-100 font-semibold"
-          >
-            Next
-          </button>
+          <span className="text-neutral-300">|</span>
+          <span>
+            <strong>Total Debit:</strong> ₹{ledgerMetrics.totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </span>
+          <span className="text-neutral-300">|</span>
+          <span>
+            <strong>Total Credit:</strong> ₹{ledgerMetrics.totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </span>
+          <span className="text-neutral-300">|</span>
+          <span className="text-[#107c41] font-bold">
+            <strong>Ready for Export</strong>
+          </span>
+        </div>
+
+        {/* Right: Excel Pagination & Zoom Bar */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 font-medium text-[11px]">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-[#d2d0ce] disabled:opacity-40 hover:bg-neutral-100 font-semibold text-neutral-700"
+            >
+              <ChevronLeft className="w-3 h-3" /> Prev
+            </button>
+            <span className="font-mono px-1">
+              {currentPage} / {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-[#d2d0ce] disabled:opacity-40 hover:bg-neutral-100 font-semibold text-neutral-700"
+            >
+              Next <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+
+          <div className="h-4 w-[1px] bg-[#d2d0ce] mx-1" />
+
+          <div className="text-[11px] font-mono font-semibold bg-white border border-[#d2d0ce] px-2 py-0.5 rounded text-neutral-700">
+            100%
+          </div>
         </div>
       </div>
     </div>

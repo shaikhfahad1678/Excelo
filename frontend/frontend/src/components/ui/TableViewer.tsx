@@ -3,14 +3,10 @@ import {
   Search,
   ArrowUpDown,
   Download,
-  Filter,
-  CheckCircle,
-  XCircle,
-  AlertTriangle,
-  Copy,
-  FileCheck,
   Edit2,
-  Check
+  Check,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import type { Transaction } from '../../types';
 
@@ -39,7 +35,6 @@ export const TableViewer: React.FC<TableViewerProps> = ({
   const tableHeaders = useMemo(() => {
     if (transactions.length === 0) return [];
     
-    // Find all unique keys across all transactions
     const keys = new Set<string>();
     transactions.forEach((tx) => {
       Object.keys(tx).forEach((k) => {
@@ -63,7 +58,6 @@ export const TableViewer: React.FC<TableViewerProps> = ({
     const isStandard = Array.from(keys).every((k) => stdKeys.includes(k));
 
     if (isStandard) {
-      // Order standard keys nicely
       return stdKeys.filter((k) => keys.has(k) || k === 'Cheque No.' || k === 'Ref No.');
     }
     
@@ -89,7 +83,6 @@ export const TableViewer: React.FC<TableViewerProps> = ({
       });
     });
   }, [transactions, searchTerm, filterStatus]);
-
 
   const sortedData = useMemo(() => {
     if (!sortField) return filteredData;
@@ -158,135 +151,117 @@ export const TableViewer: React.FC<TableViewerProps> = ({
     switch (status) {
       case 'PASS':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-            <CheckCircle className="w-3 h-3 text-emerald-600" /> PASS
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/60 font-sans">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> PASS
           </span>
         );
       case 'LOW CONFIDENCE':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-            <AlertTriangle className="w-3 h-3 text-amber-600" /> LOW CONFIDENCE
-          </span>
-        );
-      case 'RECONSTRUCTED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
-            <FileCheck className="w-3 h-3 text-blue-600" /> RECONSTRUCTED
-          </span>
-        );
-      case 'DUPLICATE':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
-            <Copy className="w-3 h-3 text-slate-500" /> DUPLICATE
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200/60 font-sans">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> REVIEW
           </span>
         );
       case 'BALANCE MISMATCH':
       case 'FAILED VALIDATION':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-            <XCircle className="w-3 h-3 text-rose-600" /> {status}
-          </span>
-        );
-      case 'MISSING DATA':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200">
-            <AlertTriangle className="w-3 h-3 text-orange-600" /> MISSING DATA
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200/60 font-sans">
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> MISMATCH
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-            <CheckCircle className="w-3 h-3 text-emerald-600" /> {status}
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-neutral-100 text-neutral-700 border border-neutral-200/60 font-sans">
+            <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" /> {status}
           </span>
         );
     }
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col h-full">
-      <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-3 flex-1 min-w-[280px]">
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+    <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-sm overflow-hidden flex flex-col">
+      {/* Search & Filter Toolbar */}
+      <div className="p-3.5 border-b border-neutral-200/80 bg-neutral-50/50 flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <div className="flex items-center gap-2.5 flex-1 min-w-[280px]">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-neutral-400" />
             <input
               type="text"
-              placeholder="Search Sr No., date, description, amounts..."
+              placeholder="Filter Sr No., date, narration, amount..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium text-slate-800"
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-neutral-900 font-medium text-neutral-800 placeholder-neutral-400"
             />
           </div>
 
-          <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-lg p-1 text-xs">
-            <Filter className="w-3.5 h-3.5 text-slate-400 ml-1" />
+          <div className="flex items-center gap-1 bg-neutral-100/80 p-0.5 rounded-xl border border-neutral-200/60 text-xs">
             <button
               onClick={() => setFilterStatus('ALL')}
-              className={`px-2 py-0.5 rounded font-medium ${
+              className={`px-2.5 py-1 rounded-lg font-semibold text-[11px] transition ${
                 filterStatus === 'ALL'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-white text-neutral-900 shadow-sm'
+                  : 'text-neutral-500 hover:text-neutral-900'
               }`}
             >
               All ({transactions.length})
             </button>
             <button
               onClick={() => setFilterStatus('PASS')}
-              className={`px-2 py-0.5 rounded font-medium ${
+              className={`px-2.5 py-1 rounded-lg font-semibold text-[11px] transition ${
                 filterStatus === 'PASS'
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-white text-emerald-800 shadow-sm'
+                  : 'text-neutral-500 hover:text-neutral-900'
               }`}
             >
               Pass
             </button>
             <button
               onClick={() => setFilterStatus('WARNINGS')}
-              className={`px-2 py-0.5 rounded font-medium ${
+              className={`px-2.5 py-1 rounded-lg font-semibold text-[11px] transition ${
                 filterStatus === 'WARNINGS'
-                  ? 'bg-amber-100 text-amber-700'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-white text-amber-800 shadow-sm'
+                  : 'text-neutral-500 hover:text-neutral-900'
               }`}
             >
-              Reconstructed / Low Conf
+              Warnings
             </button>
             <button
               onClick={() => setFilterStatus('FAILED')}
-              className={`px-2 py-0.5 rounded font-medium ${
+              className={`px-2.5 py-1 rounded-lg font-semibold text-[11px] transition ${
                 filterStatus === 'FAILED'
-                  ? 'bg-rose-100 text-rose-700'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-white text-rose-800 shadow-sm'
+                  : 'text-neutral-500 hover:text-neutral-900'
               }`}
             >
-              Failed / Mismatch
+              Failed
             </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {onExport && (
-            <>
-              <button
-                onClick={() => onExport('xlsx')}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-bold text-xs transition"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Export Excel (.xlsx)
-              </button>
-              <button
-                onClick={() => onExport('csv')}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-slate-800 text-white hover:bg-slate-900 font-bold text-xs transition"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Export CSV
-              </button>
-            </>
-          )}
-        </div>
+        {/* Minimalist Export Action Buttons */}
+        {onExport && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onExport('xlsx')}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-neutral-900 text-white hover:bg-neutral-800 font-bold text-xs transition shadow-sm"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download Excel (.xlsx)
+            </button>
+            <button
+              onClick={() => onExport('csv')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 font-bold text-xs transition"
+            >
+              <Download className="w-3.5 h-3.5" />
+              CSV
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="flex-1 overflow-auto relative">
+      {/* Ledger Table */}
+      <div className="overflow-x-auto relative">
         <table className="w-full text-left border-collapse text-xs">
-          <thead className="bg-slate-100/90 text-slate-700 font-semibold sticky top-0 z-10 border-b border-slate-200">
+          <thead className="bg-neutral-50 text-neutral-600 font-semibold border-b border-neutral-200 sticky top-0 z-10">
             <tr>
               <th className="p-3 w-10 text-center">
                 <input
@@ -295,16 +270,16 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                   checked={
                     selectedRows.size > 0 && selectedRows.size === sortedData.length
                   }
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  className="rounded border-neutral-300 text-neutral-900 focus:ring-0"
                 />
               </th>
               <th
                 onClick={() => handleSort('Sr No.')}
-                className="p-3 w-14 text-center cursor-pointer hover:bg-slate-200/60 whitespace-nowrap"
+                className="p-3 w-14 text-center cursor-pointer hover:bg-neutral-100/70 whitespace-nowrap"
               >
                 <div className="flex items-center justify-center gap-1">
-                  Sr No.
-                  <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                  #
+                  <ArrowUpDown className="w-3 h-3 text-neutral-400" />
                 </div>
               </th>
               {tableHeaders.map((header) => {
@@ -313,26 +288,25 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                   <th
                     key={header}
                     onClick={() => handleSort(header)}
-                    className={`p-3 cursor-pointer hover:bg-slate-200/60 transition whitespace-nowrap ${
+                    className={`p-3 cursor-pointer hover:bg-neutral-100/70 transition whitespace-nowrap ${
                       isNumeric ? 'text-right' : 'text-left'
                     }`}
                   >
                     <div className={`flex items-center gap-1 ${isNumeric ? 'justify-end' : 'justify-start'}`}>
                       {header}
-                      <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      <ArrowUpDown className="w-3 h-3 text-neutral-400" />
                     </div>
                   </th>
                 );
               })}
-              <th className="p-3 text-center whitespace-nowrap">Validation Status</th>
-              <th className="p-3 text-center w-16">Actions</th>
-
+              <th className="p-3 text-center whitespace-nowrap">Audit Status</th>
+              <th className="p-3 text-center w-12">Edit</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 font-mono text-[11px] text-slate-800">
+          <tbody className="divide-y divide-neutral-100 font-mono text-[11px] text-neutral-800">
             {paginatedData.length === 0 ? (
               <tr>
-                <td colSpan={10} className="p-8 text-center text-slate-400 font-sans">
+                <td colSpan={12} className="p-10 text-center text-neutral-400 font-sans">
                   No matching transaction rows found.
                 </td>
               </tr>
@@ -352,16 +326,14 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                     id={`tx-row-${globalIndex}`}
                     className={`transition-colors ${
                       isHighlighted
-                        ? 'bg-amber-100/90 ring-2 ring-amber-400 z-10'
+                        ? 'bg-amber-50 ring-1 ring-amber-300'
                         : isSelected
-                        ? 'bg-blue-50/70'
+                        ? 'bg-neutral-100/80'
                         : isFailed
-                        ? 'bg-rose-50/60 hover:bg-rose-100/60'
-                        : status === 'LOW CONFIDENCE'
-                        ? 'bg-amber-50/50 hover:bg-amber-100/50'
+                        ? 'bg-rose-50/50 hover:bg-rose-50'
                         : index % 2 === 0
-                        ? 'bg-white hover:bg-slate-50'
-                        : 'bg-slate-50/40 hover:bg-slate-100/50'
+                        ? 'bg-white hover:bg-neutral-50/70'
+                        : 'bg-neutral-50/30 hover:bg-neutral-50/70'
                     }`}
                   >
                     <td className="p-2.5 text-center">
@@ -369,28 +341,31 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => toggleRowSelect(globalIndex)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        className="rounded border-neutral-300 text-neutral-900 focus:ring-0"
                       />
                     </td>
-                    <td className="p-2.5 text-slate-500 font-bold text-center font-mono">
+                    <td className="p-2.5 text-neutral-400 text-center font-mono font-medium">
                       {srNo}
                     </td>
 
                     {tableHeaders.map((header) => {
                       const val = row[header];
+                      const isDebit = header.toLowerCase() === 'debit';
+                      const isCredit = header.toLowerCase() === 'credit';
+                      const isBalance = header.toLowerCase() === 'balance';
                       const isNumeric = ['debit', 'credit', 'balance', 'qty', 'price', 'amount', 'total'].includes(header.toLowerCase());
                       const isNumVal = typeof val === 'number' || (val !== undefined && val !== null && !isNaN(Number(val)) && val !== '' && !isNaN(parseFloat(val)));
                       
                       let displayVal = String(val ?? '');
                       if (isNumVal && typeof val === 'number') {
-                        displayVal = val.toLocaleString('en-US', {
+                        displayVal = val.toLocaleString('en-IN', {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2
                         });
                       } else if (isNumVal && typeof val === 'string') {
                         const num = parseFloat(val);
                         if (!isNaN(num)) {
-                          displayVal = num.toLocaleString('en-US', {
+                          displayVal = num.toLocaleString('en-IN', {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2
                           });
@@ -399,7 +374,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({
 
                       if (header === 'Description') {
                         return (
-                          <td key={header} className="p-2.5 font-sans font-medium text-slate-900 leading-snug min-w-[220px]">
+                          <td key={header} className="p-2.5 font-sans font-medium text-neutral-900 leading-relaxed min-w-[240px]">
                             {isEditing ? (
                               <textarea
                                 value={editingRowData?.[header] || ''}
@@ -409,7 +384,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                                   )
                                 }
                                 rows={2}
-                                className="w-full px-1.5 py-0.5 bg-white border border-blue-400 rounded text-xs"
+                                className="w-full px-2 py-1 bg-white border border-neutral-300 rounded-lg text-xs"
                               />
                             ) : (
                               val || '-'
@@ -423,8 +398,16 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                           key={header}
                           className={`p-2.5 whitespace-nowrap ${
                             isNumeric || isNumVal
-                              ? 'text-right font-mono text-slate-900'
+                              ? 'text-right font-mono'
                               : 'text-left'
+                          } ${
+                            isCredit && isNumVal
+                              ? 'text-emerald-600 font-semibold'
+                              : isDebit && isNumVal
+                              ? 'text-neutral-900 font-medium'
+                              : isBalance
+                              ? 'text-neutral-900 font-bold'
+                              : 'text-neutral-700'
                           }`}
                         >
                           {isEditing ? (
@@ -436,7 +419,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                                   prev ? { ...prev, [header]: e.target.value } : null
                                 )
                               }
-                              className="px-1 py-0.5 bg-white border border-blue-400 rounded text-xs w-full"
+                              className="px-2 py-1 bg-white border border-neutral-300 rounded-lg text-xs w-full text-right"
                             />
                           ) : (
                             displayVal || '-'
@@ -444,16 +427,15 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                         </td>
                       );
                     })}
-                    <td className="p-2.5 text-center font-sans whitespace-nowrap">
+                    <td className="p-2.5 text-center whitespace-nowrap">
                       {renderStatusBadge(status)}
                     </td>
-
 
                     <td className="p-2.5 text-center font-sans">
                       {isEditing ? (
                         <button
                           onClick={saveEditRow}
-                          className="p-1 bg-emerald-600 text-white rounded hover:bg-emerald-700"
+                          className="p-1 bg-neutral-900 text-white rounded hover:bg-neutral-800"
                           title="Save Changes"
                         >
                           <Check className="w-3.5 h-3.5" />
@@ -461,7 +443,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                       ) : (
                         <button
                           onClick={() => startEditRow(row, globalIndex)}
-                          className="p-1 text-slate-400 hover:text-blue-600 rounded hover:bg-slate-100"
+                          className="p-1 text-neutral-400 hover:text-neutral-900 rounded hover:bg-neutral-100"
                           title="Edit Row"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -476,7 +458,8 @@ export const TableViewer: React.FC<TableViewerProps> = ({
         </table>
       </div>
 
-      <div className="p-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-600 shrink-0 font-medium">
+      {/* Minimalist Pagination Bar */}
+      <div className="p-3 border-t border-neutral-200/80 bg-neutral-50/50 flex items-center justify-between text-xs text-neutral-500 shrink-0 font-medium">
         <div>
           Showing {paginatedData.length > 0 ? (currentPage - 1) * pageSize + 1 : 0} to{' '}
           {Math.min(currentPage * pageSize, sortedData.length)} of {sortedData.length}{' '}
@@ -486,19 +469,19 @@ export const TableViewer: React.FC<TableViewerProps> = ({
           <button
             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
             disabled={currentPage === 1}
-            className="px-2.5 py-1 rounded bg-white border border-slate-300 disabled:opacity-40 hover:bg-slate-100 font-semibold"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-neutral-200 disabled:opacity-40 hover:bg-neutral-100 font-semibold text-neutral-700"
           >
-            Previous
+            <ChevronLeft className="w-3.5 h-3.5" /> Prev
           </button>
-          <span>
-            Page {currentPage} of {totalPages}
+          <span className="font-mono text-neutral-700">
+            {currentPage} / {totalPages}
           </span>
           <button
             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
             disabled={currentPage === totalPages}
-            className="px-2.5 py-1 rounded bg-white border border-slate-300 disabled:opacity-40 hover:bg-slate-100 font-semibold"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-neutral-200 disabled:opacity-40 hover:bg-neutral-100 font-semibold text-neutral-700"
           >
-            Next
+            Next <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

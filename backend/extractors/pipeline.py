@@ -1,6 +1,8 @@
 """
 Multi-Stage Intelligent Extraction Pipeline
-Routes PDF statements exclusively to the 4 supported bank statement special extractors:
+Routes PDF statements exclusively to the supported bank statement special extractors:
+- Union Bank Statement Special Extractor
+- Yes Bank Statement Special Extractor
 - HDFC Bank Statement Special Extractor
 - Axis Bank Statement Special Extractor
 - ICICI Bank Statement Special Extractor
@@ -12,7 +14,9 @@ from backend.extractors.pdf_classifier import (
     TYPE_HDFC,
     TYPE_INDUSIND,
     TYPE_AXIS,
-    TYPE_ICICI
+    TYPE_ICICI,
+    TYPE_YESBANK,
+    TYPE_UNION
 )
 from backend.validators.strict_validator import validate_and_enrich_transactions
 from backend.utils.logger import logger
@@ -45,7 +49,13 @@ def execute_intelligent_pipeline(pdf_path: str) -> Tuple[List[Dict[str, Any]], s
     pdf_type, class_meta = classify_pdf_type(pdf_path)
     logger.info(f"Initiating pipeline for [{pdf_path}] classified as: {pdf_type}")
 
-    if pdf_type == TYPE_ICICI:
+    if pdf_type == TYPE_UNION:
+        from backend.extractors.candidate_extractors import run_union_extractor
+        candidate_sequence = [("Union Bank Special Extractor", run_union_extractor)]
+    elif pdf_type == TYPE_YESBANK:
+        from backend.extractors.candidate_extractors import run_yesbank_extractor
+        candidate_sequence = [("Yes Bank Special Extractor", run_yesbank_extractor)]
+    elif pdf_type == TYPE_ICICI:
         from backend.extractors.candidate_extractors import run_icici_extractor
         candidate_sequence = [("ICICI Bank Special Extractor", run_icici_extractor)]
     elif pdf_type == TYPE_AXIS:
@@ -67,7 +77,7 @@ def execute_intelligent_pipeline(pdf_path: str) -> Tuple[List[Dict[str, Any]], s
         "candidates": [],
         "attempted_methods": [],
         "selected_method": "None",
-        "selection_reason": "Unsupported PDF type. Please provide an HDFC, Axis, ICICI, or IndusInd bank statement.",
+        "selection_reason": "Unsupported PDF type. Please provide a supported bank statement (HDFC, Axis, ICICI, IndusInd, Yes Bank, Union Bank).",
         "is_failsafe_triggered": True
     }
 

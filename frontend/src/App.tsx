@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
-import { Sidebar } from './components/layout/Sidebar';
+import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/layout/Navbar';
-
 import { PdfExtractionView } from './components/views/PdfExtractionView';
+
 import type {
   FileCard,
   ExtractionResult
@@ -10,15 +9,16 @@ import type {
 
 import {
   uploadFiles,
+  generateSamplePdf,
   extractPdf,
   retryExtraction,
   generateExcel,
-  fetchFileStatus,
-  deleteFile
+  checkHealth,
+  fetchFileStatus
 } from './services/api';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<string>('extraction');
+  const [isBackendConnected, setIsBackendConnected] = useState<boolean>(true);
 
   // Application State
   const [files, setFiles] = useState<FileCard[]>([]);
@@ -30,6 +30,15 @@ export function App() {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
+
+  const refreshData = async () => {
+    const health = await checkHealth();
+    setIsBackendConnected(health);
+  };
+
+  useEffect(() => {
+    refreshData();
+  }, []);
 
   const handleUploadFiles = async (
     e: React.ChangeEvent<HTMLInputElement> | React.DragEvent
@@ -46,7 +55,6 @@ export function App() {
 
     if (rawFiles.length === 0) return;
 
-    // Create optimistic temporary cards for instantaneous zero-latency UI feedback
     const tempCards: FileCard[] = rawFiles.map((f, idx) => ({
       id: `temp_${Date.now()}_${idx}`,
       filename: f.name,
@@ -55,11 +63,11 @@ export function App() {
       pages: 1,
       file_size: `${(f.size / (1024 * 1024)).toFixed(2)} MB`,
       status: 'Ready',
-      extraction_method: 'Auto Multi-Engine Pipeline',
+      extraction_method: 'Auto-Detecting...',
       progress: 0,
       confidence_score: 0.0,
       validation_status: 'Pending',
-      detect_msg: 'Registering document...',
+      detect_msg: 'Auto-detecting statement type...',
       uploaded_at: new Date().toISOString()
     }));
 
@@ -71,16 +79,24 @@ export function App() {
         ...prev.filter((f) => !f.id.startsWith('temp_')),
         ...uploadedCards
       ]);
-      showToast(`Registered ${uploadedCards.length} PDF statement(s).`);
+      showToast(`Registered & auto-detected ${uploadedCards.length} statement(s).`);
     } catch (err: any) {
       setFiles((prev) => prev.filter((f) => !f.id.startsWith('temp_')));
       showToast(err.message || 'Failed to upload files', 'error');
     }
   };
 
+  const handleLoadSample = async () => {
+    try {
+      const sampleCard = await generateSamplePdf();
+      setFiles((prev) => [sampleCard, ...prev]);
+      showToast('Loaded synthetic sample bank statement into workspace.');
+    } catch (err: any) {
+      showToast('Error generating sample PDF', 'error');
+    }
+  };
 
   const handleRemoveFile = (id: string) => {
-    deleteFile(id);
     setFiles((prev) => prev.filter((f) => f.id !== id));
     setResults((prev) => {
       const next = { ...prev };
@@ -103,7 +119,6 @@ export function App() {
       )
     );
 
-    // Dynamic status polling every 800ms to show live processing logs
     const pollInterval = setInterval(async () => {
       try {
         const statuses = await Promise.all(
@@ -126,10 +141,9 @@ export function App() {
           })
         );
       } catch (e) {
-        console.error("Progress polling failed:", e);
+        console.error('Progress polling failed:', e);
       }
     }, 800);
-
 
     try {
       const extractionResults = await extractPdf(fileIds, engineOverrides, engineOverride);
@@ -161,6 +175,7 @@ export function App() {
       );
 
       showToast(`Extraction complete for ${extractionResults.length} statement(s).`);
+      refreshData();
     } catch (err: any) {
       showToast(err.message || 'Extraction execution failed', 'error');
       setFiles((prev) =>
@@ -193,6 +208,7 @@ export function App() {
         )
       );
       showToast(`Re-extracted ${result.filename} using ${preferredEngine}.`);
+      refreshData();
     } catch (err: any) {
       showToast(err.message || 'Retry failed', 'error');
     } finally {
@@ -202,30 +218,20 @@ export function App() {
 
   const handleGenerateExport = async (fileIds: string[], format: 'xlsx' | 'csv') => {
     try {
-      const { blob, filename } = await generateExcel(fileIds, format);
-      const blobUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(blobUrl);
-      showToast(`Exported ${filename} successfully!`);
+      await generateExcel(fileIds, format);
+      showToast(`Exported ${format.toUpperCase()} successfully.`);
     } catch (err: any) {
-      showToast(err.message || 'Failed to generate export file', 'error');
+      showToast('Export failed', 'error');
     }
   };
 
-
-
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-100 font-sans text-slate-900">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#fafafa] font-sans text-neutral-900">
       {toast && (
         <div
-          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl border text-xs font-bold transition-all ${
+          className={`fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-xl border transition-all animate-bounce ${
             toast.type === 'success'
-              ? 'bg-emerald-600 text-white border-emerald-500'
+              ? 'bg-neutral-900 text-white border-neutral-800'
               : 'bg-rose-600 text-white border-rose-500'
           }`}
         >
@@ -233,36 +239,24 @@ export function App() {
         </div>
       )}
 
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
+      <Navbar
+        processingCount={isProcessing ? files.length : 0}
+        isBackendConnected={isBackendConnected}
       />
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Navbar
-          activeTab={activeTab}
-          processingCount={isProcessing ? files.length : 0}
+      <main className="flex-1 overflow-y-auto px-6 py-8">
+        <PdfExtractionView
+          files={files}
+          onUploadFiles={handleUploadFiles}
+          onLoadSample={handleLoadSample}
+          onRemoveFile={handleRemoveFile}
+          onExtractFiles={handleExtractFiles}
+          onRetryFile={handleRetryFile}
+          onGenerateExport={handleGenerateExport}
+          results={results}
+          isProcessing={isProcessing}
         />
-
-        <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
-          {activeTab === 'extraction' && (
-            <PdfExtractionView
-              files={files}
-              onUploadFiles={handleUploadFiles}
-
-              onRemoveFile={handleRemoveFile}
-              onExtractFiles={handleExtractFiles}
-              onRetryFile={handleRetryFile}
-              onGenerateExport={handleGenerateExport}
-              results={results}
-              isProcessing={isProcessing}
-            />
-          )}
-
-
-
-        </main>
-      </div>
+      </main>
     </div>
   );
 }

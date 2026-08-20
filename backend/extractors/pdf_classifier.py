@@ -1,6 +1,8 @@
 """
 PDF Type Classifier Module
-Classifies PDF bank statements exclusively into 4 supported bank types:
+Classifies PDF bank statements exclusively into supported bank types:
+- Union Bank Statement
+- Yes Bank Statement
 - HDFC Bank Statement
 - Axis Bank Statement
 - ICICI Bank Statement
@@ -10,6 +12,8 @@ from typing import Tuple, Dict, Any
 import pdfplumber
 from backend.utils.logger import logger
 
+TYPE_UNION = "Union Bank Statement"
+TYPE_YESBANK = "Yes Bank Statement"
 TYPE_HDFC = "HDFC Bank Statement"
 TYPE_AXIS = "Axis Bank Statement"
 TYPE_ICICI = "ICICI Bank Statement"
@@ -41,12 +45,18 @@ def classify_pdf_type(pdf_path: str) -> Tuple[str, Dict[str, Any]]:
         sample_lower = full_sample_text.lower()
 
         # Bank Detection heuristic checks
+        is_union = ("union bank of india" in sample_lower or "unionbankofindia" in sample_lower or "ifsc ubin0" in sample_lower or "union udaan" in sample_lower or ("customer/cif id" in sample_lower and "account number" in sample_lower and "statement period" in sample_lower and "transaction id" in sample_lower))
+        is_yesbank = ("yes touch" in sample_lower or "yes grace" in sample_lower or "l65190mh2003plc143249" in sample_lower or "ifsc code: yesb0" in sample_lower or ("statement of account:" in sample_lower and "running balance" in sample_lower and "value date" in sample_lower))
         is_axis = ("statement of axis account" in sample_lower) or ("axis bank" in sample_lower and "tran date" in sample_lower and "particulars" in sample_lower)
         is_icici = ("statement of transactions in saving account" in sample_lower) or ("icici bank" in sample_lower and "transaction remarks" in sample_lower)
         is_indusind = ("indusind bank" in sample_lower or "indus privilege" in sample_lower) or ("transaction history" in sample_lower and "chq no/ref no" in sample_lower and "withdrawal" in sample_lower)
         is_hdfc = ("hdfc bank" in sample_lower or "hdfc0" in sample_lower) and ("chq./ref.no" in sample_lower or "value dt" in sample_lower or "statement of account" in sample_lower)
 
-        if is_axis:
+        if is_union:
+            pdf_type = TYPE_UNION
+        elif is_yesbank:
+            pdf_type = TYPE_YESBANK
+        elif is_axis:
             pdf_type = TYPE_AXIS
         elif is_icici:
             pdf_type = TYPE_ICICI

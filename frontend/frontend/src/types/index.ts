@@ -118,10 +118,6 @@ export interface Settings {
     styling: string;
     format: string;
   };
-  batch_processing: {
-    max_concurrent: number;
-    auto_export: boolean;
-  };
   log_retention_days: number;
   ocr_options: {
     enable_ocr_fallback: boolean;

@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Sidebar } from './components/layout/Sidebar';
 import { Navbar } from './components/layout/Navbar';
 
 import { PdfExtractionView } from './components/views/PdfExtractionView';
 import { ScannedOcrView } from './components/views/ScannedOcrView';
-import { BatchProcessingView } from './components/views/BatchProcessingView';
 import { SettingsView } from './components/views/SettingsView';
 
 import type {
@@ -48,10 +46,6 @@ export function App() {
       include_summary_sheet: true,
       styling: 'Corporate Blue',
       format: 'xlsx'
-    },
-    batch_processing: {
-      max_concurrent: 4,
-      auto_export: false
     },
     log_retention_days: 30,
     ocr_options: {
@@ -296,12 +290,12 @@ export function App() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-100 font-sans text-slate-900">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#fafafa] font-sans text-neutral-900">
       {toast && (
         <div
-          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl border text-xs font-bold transition-all ${
+          className={`fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-xl border transition-all animate-bounce ${
             toast.type === 'success'
-              ? 'bg-emerald-600 text-white border-emerald-500'
+              ? 'bg-neutral-900 text-white border-neutral-800'
               : 'bg-rose-600 text-white border-rose-500'
           }`}
         >
@@ -309,55 +303,40 @@ export function App() {
         </div>
       )}
 
-      <Sidebar
+      <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        processingCount={isProcessing ? files.length : 0}
+        isBackendConnected={isBackendConnected}
       />
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Navbar
-          activeTab={activeTab}
-          processingCount={isProcessing ? files.length : 0}
-        />
+      <main className="flex-1 overflow-y-auto px-6 py-8">
+        {activeTab === 'extraction' && (
+          <PdfExtractionView
+            files={files}
+            onUploadFiles={handleUploadFiles}
+            onLoadSample={handleLoadSample}
+            onRemoveFile={handleRemoveFile}
+            onExtractFiles={handleExtractFiles}
+            onRetryFile={handleRetryFile}
+            onGenerateExport={handleGenerateExport}
+            results={results}
+            isProcessing={isProcessing}
+          />
+        )}
 
-        <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
-          {activeTab === 'extraction' && (
-            <PdfExtractionView
-              files={files}
-              onUploadFiles={handleUploadFiles}
-              onLoadSample={handleLoadSample}
-              onRemoveFile={handleRemoveFile}
-              onExtractFiles={handleExtractFiles}
-              onRetryFile={handleRetryFile}
-              onGenerateExport={handleGenerateExport}
-              results={results}
-              isProcessing={isProcessing}
-            />
-          )}
+        {activeTab === 'scanned' && (
+          <ScannedOcrView />
+        )}
 
-          {activeTab === 'scanned' && (
-            <ScannedOcrView />
-          )}
-
-          {activeTab === 'batch' && (
-            <BatchProcessingView
-              files={files}
-              onExtractAll={() => handleExtractFiles(files.map((f) => f.id))}
-              onExportAll={(fmt) => handleGenerateExport(files.map((f) => f.id), fmt)}
-              isProcessing={isProcessing}
-              results={results}
-            />
-          )}
-
-          {activeTab === 'settings' && (
-            <SettingsView
-              settings={settings}
-              onSaveSettings={handleSaveSettings}
-              isBackendConnected={isBackendConnected}
-            />
-          )}
-        </main>
-      </div>
+        {activeTab === 'settings' && (
+          <SettingsView
+            settings={settings}
+            onSaveSettings={handleSaveSettings}
+            isBackendConnected={isBackendConnected}
+          />
+        )}
+      </main>
     </div>
   );
 }
