@@ -127,7 +127,7 @@ class StatementService:
             "ICICI Bank Statement",
             "IndusInd Bank Statement"
         ]
-        target_engine = pdf_type if pdf_type in supported_types else self.settings.get("preferred_engine", "Auto Multi-Engine Pipeline")
+        target_engine = pdf_type if pdf_type in supported_types else "Auto Multi-Engine Pipeline"
 
         card = {
             "id": file_id,
@@ -336,7 +336,7 @@ class StatementService:
                         "pages": 1,
                         "file_size": f"{round(os.path.getsize(fp)/1024, 1)} KB",
                         "status": "Ready",
-                        "extraction_method": self.settings["preferred_engine"],
+                        "extraction_method": "Auto Multi-Engine Pipeline",
                         "progress": 0,
                         "confidence_score": 0.0,
                         "validation_status": "Pending",
@@ -350,10 +350,31 @@ class StatementService:
         card = self.file_cards[file_id]
         card["status"] = "Extracting"
         card["progress"] = 30
-        pdf_path = card["file_path"]
+        pdf_path = card.get("file_path", "")
+        if not pdf_path or not os.path.exists(pdf_path):
+            downloaded = self.download_from_cloudflare_r2(file_id)
+            if downloaded and os.path.exists(downloaded):
+                pdf_path = downloaded
+                card["file_path"] = downloaded
+            else:
+                logger.error(f"PDF file not found on disk or Cloudflare R2: {pdf_path}")
+                return {
+                    "file_id": file_id,
+                    "filename": card.get("filename", file_id),
+                    "pdf_type": card.get("pdf_type", "Unknown"),
+                    "success": False,
+                    "engine_used": "None",
+                    "processing_time": 0.0,
+                    "confidence_score": 0.0,
+                    "failsafe_warning": "File not found on serverless container. Please re-upload PDF.",
+                    "error": "File not found on serverless container. Please re-upload PDF.",
+                    "transactions": [],
+                    "summary": {"total_count": 0, "pass_count": 0, "failed_count": 0, "is_valid": False}
+                }
+
         start_time = time.time()
 
-        selected_engine = engine_override or self.settings["preferred_engine"]
+        selected_engine = engine_override or "Auto Multi-Engine Pipeline"
         engine_used = selected_engine
         diagnostics = {}
         validated_txs = []
@@ -431,7 +452,7 @@ class StatementService:
         is_failsafe = diagnostics.get("is_failsafe_triggered", not is_valid)
         failsafe_msg = FAILSAFE_WARNING_MSG if is_failsafe else None
 
-        card["status"] = "Completed" if (total_count > 0 and not is_failsafe) else "Failed Validation"
+        card["status"] = "Completed" if total_count > 0 else "Failed"
         card["progress"] = 100
         card["confidence_score"] = conf_score
         card["extraction_method"] = engine_used

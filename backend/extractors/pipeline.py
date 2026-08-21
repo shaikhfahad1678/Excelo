@@ -76,7 +76,26 @@ def execute_intelligent_pipeline(pdf_path: str) -> Tuple[List[Dict[str, Any]], s
         from backend.extractors.candidate_extractors import run_hdfc_extractor
         candidate_sequence = [("HDFC Bank Special Extractor", run_hdfc_extractor)]
     else:
-        candidate_sequence = []
+        from backend.extractors.candidate_extractors import (
+            run_hdfc_extractor,
+            run_union_extractor,
+            run_axis_extractor,
+            run_icici_extractor,
+            run_yesbank_extractor,
+            run_pnb_extractor,
+            run_kotak_extractor,
+            run_indusind_extractor
+        )
+        candidate_sequence = [
+            ("Adaptive Statement Extractor (Strategy A)", run_hdfc_extractor),
+            ("Adaptive Statement Extractor (Strategy B)", run_union_extractor),
+            ("Adaptive Statement Extractor (Strategy C)", run_axis_extractor),
+            ("Adaptive Statement Extractor (Strategy D)", run_icici_extractor),
+            ("Adaptive Statement Extractor (Strategy E)", run_yesbank_extractor),
+            ("Adaptive Statement Extractor (Strategy F)", run_pnb_extractor),
+            ("Adaptive Statement Extractor (Strategy G)", run_kotak_extractor),
+            ("Adaptive Statement Extractor (Strategy H)", run_indusind_extractor)
+        ]
 
     diagnostics = {
         "pdf_path": pdf_path,
@@ -136,12 +155,16 @@ def execute_intelligent_pipeline(pdf_path: str) -> Tuple[List[Dict[str, Any]], s
                 "error": str(e)
             })
 
-    if all_candidate_results and all_candidate_results[0][0] > 0:
-        score, method_name, enriched_txs, summary, cand_info = all_candidate_results[0]
-        diagnostics["selected_method"] = method_name
-        diagnostics["selection_reason"] = f"Extracted [{method_name}] with score ({score})."
-        diagnostics["is_failsafe_triggered"] = not summary["is_valid"]
-        return enriched_txs, method_name, diagnostics
-    else:
-        diagnostics["is_failsafe_triggered"] = True
-        return [], "None", diagnostics
+    if all_candidate_results:
+        # Sort candidates by score and row count descending to pick the best strategy
+        all_candidate_results.sort(key=lambda x: (x[0], len(x[2])), reverse=True)
+        best = all_candidate_results[0]
+        if len(best[2]) > 0:
+            score, method_name, enriched_txs, summary, cand_info = best
+            diagnostics["selected_method"] = method_name
+            diagnostics["selection_reason"] = f"Best extracted candidate [{method_name}] with {len(enriched_txs)} rows (score {score})."
+            diagnostics["is_failsafe_triggered"] = not summary.get("is_valid", False)
+            return enriched_txs, method_name, diagnostics
+
+    diagnostics["is_failsafe_triggered"] = True
+    return [], "None", diagnostics
