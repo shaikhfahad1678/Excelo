@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/layout/Navbar';
+
 import { PdfExtractionView } from './components/views/PdfExtractionView';
+import { ScannedOcrView } from './components/views/ScannedOcrView';
+import { SettingsView } from './components/views/SettingsView';
 
 import type {
   FileCard,
-  ExtractionResult
+  ExtractionResult,
+  Settings
 } from './types';
 
 import {
@@ -13,11 +17,14 @@ import {
   extractPdf,
   retryExtraction,
   generateExcel,
+  fetchSettings,
+  updateSettings,
   checkHealth,
   fetchFileStatus
 } from './services/api';
 
 export function App() {
+  const [activeTab, setActiveTab] = useState<string>('extraction');
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(true);
 
   // Application State
@@ -26,14 +33,51 @@ export function App() {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
+  const [settings, setSettingsState] = useState<Settings>({
+    extraction_priority: 'Accuracy First',
+    preferred_engine: 'Auto Multi-Engine Pipeline',
+    confidence_threshold: 85.0,
+    validation_rules: {
+      arithmetic_check: true,
+      tolerance: 0.05,
+      duplicate_check: true
+    },
+    excel_output: {
+      include_summary_sheet: true,
+      styling: 'Corporate Blue',
+      format: 'xlsx'
+    },
+    log_retention_days: 30,
+    ocr_options: {
+      enable_ocr_fallback: true,
+      ocr_engine: 'Tesseract OCR (v5.3)'
+    }
+  });
+
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
 
   const refreshData = async () => {
+    const local = localStorage.getItem('excelo_settings');
+    if (local) {
+      try {
+        const parsed = JSON.parse(local);
+        setSettingsState((prev) => ({ ...prev, ...parsed }));
+      } catch (e) {}
+    }
     const health = await checkHealth();
     setIsBackendConnected(health);
+    if (health) {
+      try {
+        const s = await fetchSettings();
+        setSettingsState(s);
+        localStorage.setItem('excelo_settings', JSON.stringify(s));
+      } catch (err) {
+        console.error('Error fetching backend data:', err);
+      }
+    }
   };
 
   useEffect(() => {
@@ -55,6 +99,7 @@ export function App() {
 
     if (rawFiles.length === 0) return;
 
+    // Create optimistic temporary cards for instantaneous zero-latency UI feedback
     const tempCards: FileCard[] = rawFiles.map((f, idx) => ({
       id: `temp_${Date.now()}_${idx}`,
       filename: f.name,
@@ -63,11 +108,11 @@ export function App() {
       pages: 1,
       file_size: `${(f.size / (1024 * 1024)).toFixed(2)} MB`,
       status: 'Ready',
-      extraction_method: 'Auto-Detecting...',
+      extraction_method: 'Auto Multi-Engine Pipeline',
       progress: 0,
       confidence_score: 0.0,
       validation_status: 'Pending',
-      detect_msg: 'Auto-detecting statement type...',
+      detect_msg: 'Registering document...',
       uploaded_at: new Date().toISOString()
     }));
 
@@ -79,7 +124,7 @@ export function App() {
         ...prev.filter((f) => !f.id.startsWith('temp_')),
         ...uploadedCards
       ]);
-      showToast(`Registered & auto-detected ${uploadedCards.length} statement(s).`);
+      showToast(`Registered ${uploadedCards.length} PDF statement(s).`);
     } catch (err: any) {
       setFiles((prev) => prev.filter((f) => !f.id.startsWith('temp_')));
       showToast(err.message || 'Failed to upload files', 'error');
@@ -119,6 +164,7 @@ export function App() {
       )
     );
 
+    // Dynamic status polling every 800ms to show live processing logs
     const pollInterval = setInterval(async () => {
       try {
         const statuses = await Promise.all(
@@ -141,9 +187,10 @@ export function App() {
           })
         );
       } catch (e) {
-        console.error('Progress polling failed:', e);
+        console.error("Progress polling failed:", e);
       }
     }, 800);
+
 
     try {
       const extractionResults = await extractPdf(fileIds, engineOverrides, engineOverride);
@@ -218,10 +265,27 @@ export function App() {
 
   const handleGenerateExport = async (fileIds: string[], format: 'xlsx' | 'csv') => {
     try {
-      await generateExcel(fileIds, format);
-      showToast(`Exported ${format.toUpperCase()} successfully.`);
+      const { download_url, filename } = await generateExcel(fileIds, format);
+      const link = document.createElement('a');
+      link.href = download_url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      showToast(`Exported ${filename} successfully!`);
     } catch (err: any) {
-      showToast('Export failed', 'error');
+      showToast(err.message || 'Failed to generate export file', 'error');
+    }
+  };
+
+  const handleSaveSettings = async (updatedSettings: Settings) => {
+    try {
+      localStorage.setItem('excelo_settings', JSON.stringify(updatedSettings));
+      const saved = await updateSettings(updatedSettings);
+      setSettingsState(saved);
+      showToast('Settings & API Keys saved permanently.');
+    } catch (err: any) {
+      showToast('Failed to save settings', 'error');
     }
   };
 
@@ -240,22 +304,38 @@ export function App() {
       )}
 
       <Navbar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
         processingCount={isProcessing ? files.length : 0}
         isBackendConnected={isBackendConnected}
       />
 
       <main className="flex-1 overflow-y-auto px-6 py-8">
-        <PdfExtractionView
-          files={files}
-          onUploadFiles={handleUploadFiles}
-          onLoadSample={handleLoadSample}
-          onRemoveFile={handleRemoveFile}
-          onExtractFiles={handleExtractFiles}
-          onRetryFile={handleRetryFile}
-          onGenerateExport={handleGenerateExport}
-          results={results}
-          isProcessing={isProcessing}
-        />
+        {activeTab === 'extraction' && (
+          <PdfExtractionView
+            files={files}
+            onUploadFiles={handleUploadFiles}
+            onLoadSample={handleLoadSample}
+            onRemoveFile={handleRemoveFile}
+            onExtractFiles={handleExtractFiles}
+            onRetryFile={handleRetryFile}
+            onGenerateExport={handleGenerateExport}
+            results={results}
+            isProcessing={isProcessing}
+          />
+        )}
+
+        {activeTab === 'scanned' && (
+          <ScannedOcrView />
+        )}
+
+        {activeTab === 'settings' && (
+          <SettingsView
+            settings={settings}
+            onSaveSettings={handleSaveSettings}
+            isBackendConnected={isBackendConnected}
+          />
+        )}
       </main>
     </div>
   );

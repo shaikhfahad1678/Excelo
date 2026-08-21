@@ -1,6 +1,7 @@
 """
 Bank Statement Candidate Extractor Module
 Contains individual specialized candidate extractors for:
+- Kotak Bank Statement
 - PNB Bank Statement
 - Union Bank Statement
 - Yes Bank Statement
@@ -11,6 +12,14 @@ Contains individual specialized candidate extractors for:
 """
 from typing import List, Dict, Any
 from backend.utils.logger import logger
+
+def run_kotak_extractor(pdf_path: str) -> List[Dict[str, Any]]:
+    try:
+        from backend.extractors.kotak_extractor import run_kotak_extractor as ext
+        return ext(pdf_path)
+    except Exception as e:
+        logger.error(f"Kotak Bank extractor failed: {e}")
+        return []
 
 def run_pnb_extractor(pdf_path: str) -> List[Dict[str, Any]]:
     try:

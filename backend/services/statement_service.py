@@ -503,7 +503,7 @@ class StatementService:
                 sheet_map[fname_clean] = res["transactions"]
             generate_excel_workbook(sheet_map, filepath)
 
-        return filename
+        return filepath
 
     def get_settings(self) -> Dict[str, Any]:
         return self.settings

@@ -4,9 +4,17 @@ Layout:
 Row 1: Subtotal row (above Debit: sub total debit value in RED; above Credit: sub total credit value in GREEN)
 Row 2: Header row (Sr No., Date, Description, Ledger, Debit, Credit, Balance) - Header colors unchanged
 Row 3+: Data rows with empty Ledger column, Debit values in RED, Credit values in GREEN, numeric formatting, thin borders, and auto-filters.
+Right Side Metadata (after leaving Column H blank):
+- Column I (Col 9) / Column J (Col 10):
+  - Row 4: Bank Name -> (empty)
+  - Row 5: Account No. -> (empty)
+  - Row 6: Customer Name. -> (empty)
+  - Row 7: (blank)
+  - Row 8: Opening Balance -> <calculated opening balance value>
+  - Row 9: Closing Balance -> <calculated closing balance value>
 """
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -35,6 +43,12 @@ def generate_excel_workbook(
     Row 1: Subtotal row with Debit subtotal value (RED) and Credit subtotal value (GREEN).
     Row 2: Header row (colors untouched).
     Row 3..N+2: Transaction data rows with Debit in RED and Credit in GREEN.
+    Side summary block in Column I & J (leaving Column H blank):
+      - Bank Name
+      - Account No.
+      - Customer Name.
+      - Opening Balance
+      - Closing Balance
     """
     wb = openpyxl.Workbook()
     wb.remove(wb.active) # Remove default sheet
@@ -48,6 +62,9 @@ def generate_excel_workbook(
     subtotal_credit_font = Font(name="Calibri", size=11, bold=True, color="16A34A") # Subtotal Credit in GREEN
     
     regular_font = Font(name="Calibri", size=11, color="0F172A")
+    label_meta_font = Font(name="Calibri", size=11, bold=False, color="000000")
+    val_meta_font = Font(name="Calibri", size=11, bold=False, color="000000")
+    
     debit_font = Font(name="Calibri", size=11, bold=False, color="DC2626") # Debit Value in RED
     credit_font = Font(name="Calibri", size=11, bold=False, color="16A34A") # Credit Value in GREEN
     
@@ -98,6 +115,37 @@ def generate_excel_workbook(
                 except (ValueError, TypeError):
                     pass
 
+        # Calculate Opening Balance & Closing Balance
+        opening_balance_val: Optional[float] = None
+        closing_balance_val: Optional[float] = None
+
+        if transactions:
+            # Closing balance from last transaction
+            for tx in reversed(transactions):
+                b = tx.get("Balance")
+                if b is not None:
+                    try:
+                        closing_balance_val = float(str(b).replace(',', ''))
+                        break
+                    except (ValueError, TypeError):
+                        pass
+
+            # Opening balance from first transaction
+            first_tx = transactions[0]
+            first_bal = first_tx.get("Balance")
+            if first_bal is not None:
+                try:
+                    f_bal = float(str(first_bal).replace(',', ''))
+                    f_dr = 0.0
+                    f_cr = 0.0
+                    if first_tx.get("Debit") is not None:
+                        f_dr = float(str(first_tx.get("Debit")).replace(',', ''))
+                    if first_tx.get("Credit") is not None:
+                        f_cr = float(str(first_tx.get("Credit")).replace(',', ''))
+                    opening_balance_val = round(f_bal + f_dr - f_cr, 2)
+                except (ValueError, TypeError):
+                    pass
+
         # ----------------------------------------------------
         # ROW 1: Subtotal Row (above header)
         # ----------------------------------------------------
@@ -144,86 +192,128 @@ def generate_excel_workbook(
         # ----------------------------------------------------
         # ROW 3+: Data Rows (Debit in RED, Credit in GREEN)
         # ----------------------------------------------------
-        for row_idx, tx in enumerate(transactions, start=3):
-            sr_num = tx.get("Sr No.") or global_sr_no
+        total_rows_needed = max(len(transactions) + 2, 9)
 
-            row_data = [
-                sr_num,
-                sanitize_value(tx.get("Date", "")),
-                sanitize_value(tx.get("Description", "")),
-                sanitize_value(tx.get("Ledger", "")), # Empty Ledger column
-                tx.get("Debit"),
-                tx.get("Credit"),
-                tx.get("Balance")
-            ]
-            ws.append(row_data)
-            global_sr_no += 1
+        for row_idx in range(3, total_rows_needed + 1):
+            tx_index = row_idx - 3
+            if tx_index < len(transactions):
+                tx = transactions[tx_index]
+                sr_num = tx.get("Sr No.") or global_sr_no
+                row_data = [
+                    sr_num,
+                    sanitize_value(tx.get("Date", "")),
+                    sanitize_value(tx.get("Description", "")),
+                    sanitize_value(tx.get("Ledger", "")), # Empty Ledger column
+                    tx.get("Debit"),
+                    tx.get("Credit"),
+                    tx.get("Balance")
+                ]
+                ws.append(row_data)
+                global_sr_no += 1
 
-            # Apply row styling & number formatting
-            for col_idx in range(1, len(columns_order) + 1):
-                cell = ws.cell(row=row_idx, column=col_idx)
-                cell.border = thin_border
+                # Apply row styling & number formatting
+                for col_idx in range(1, len(columns_order) + 1):
+                    cell = ws.cell(row=row_idx, column=col_idx)
+                    cell.border = thin_border
 
-                if row_idx % 2 == 1:
-                    cell.fill = alt_row_fill
+                    if row_idx % 2 == 1:
+                        cell.fill = alt_row_fill
 
-                col_name = columns_order[col_idx - 1]
-                if col_name == "Debit":
-                    if cell.value is not None and isinstance(cell.value, (int, float)):
-                        cell.number_format = '#,##0.00'
-                        cell.alignment = Alignment(horizontal="right", vertical="center")
-                        cell.font = debit_font # Red color for Debit values
-                    else:
+                    col_name = columns_order[col_idx - 1]
+                    if col_name == "Debit":
+                        if cell.value is not None and isinstance(cell.value, (int, float)):
+                            cell.number_format = '#,##0.00'
+                            cell.alignment = Alignment(horizontal="right", vertical="center")
+                            cell.font = debit_font # Red color for Debit values
+                        else:
+                            cell.font = regular_font
+                            cell.alignment = Alignment(horizontal="center", vertical="center")
+                    elif col_name == "Credit":
+                        if cell.value is not None and isinstance(cell.value, (int, float)):
+                            cell.number_format = '#,##0.00'
+                            cell.alignment = Alignment(horizontal="right", vertical="center")
+                            cell.font = credit_font # Green color for Credit values
+                        else:
+                            cell.font = regular_font
+                            cell.alignment = Alignment(horizontal="center", vertical="center")
+                    elif col_name == "Balance":
+                        cell.font = regular_font
+                        if cell.value is not None and isinstance(cell.value, (int, float)):
+                            cell.number_format = '#,##0.00'
+                            cell.alignment = Alignment(horizontal="right", vertical="center")
+                        else:
+                            cell.alignment = Alignment(horizontal="center", vertical="center")
+                    elif col_name in ["Sr No.", "Date"]:
                         cell.font = regular_font
                         cell.alignment = Alignment(horizontal="center", vertical="center")
-                elif col_name == "Credit":
-                    if cell.value is not None and isinstance(cell.value, (int, float)):
-                        cell.number_format = '#,##0.00'
-                        cell.alignment = Alignment(horizontal="right", vertical="center")
-                        cell.font = credit_font # Green color for Credit values
+                    elif col_name == "Ledger":
+                        cell.font = regular_font
+                        cell.alignment = Alignment(horizontal="left", vertical="center")
                     else:
                         cell.font = regular_font
-                        cell.alignment = Alignment(horizontal="center", vertical="center")
-                elif col_name == "Balance":
-                    cell.font = regular_font
-                    if cell.value is not None and isinstance(cell.value, (int, float)):
-                        cell.number_format = '#,##0.00'
-                        cell.alignment = Alignment(horizontal="right", vertical="center")
-                    else:
-                        cell.alignment = Alignment(horizontal="center", vertical="center")
-                elif col_name in ["Sr No.", "Date"]:
-                    cell.font = regular_font
-                    cell.alignment = Alignment(horizontal="center", vertical="center")
-                elif col_name == "Ledger":
-                    cell.font = regular_font
-                    cell.alignment = Alignment(horizontal="left", vertical="center")
-                else:
-                    cell.font = regular_font
 
-        # Enable Auto-filters on Header Row (Row 2)
+        # ----------------------------------------------------
+        # SIDE METADATA BLOCK (Columns I & J, leaving Column H blank)
+        # ----------------------------------------------------
+        # Row 4: Bank Name
+        # Row 5: Account No.
+        # Row 6: Customer Name.
+        # Row 7: (blank)
+        # Row 8: Opening Balance -> opening_balance_val
+        # Row 9: Closing Balance -> closing_balance_val
+        side_meta_items = [
+            (4, "Bank Name", ""),
+            (5, "Account No.", ""),
+            (6, "Customer Name.", ""),
+            (8, "Opening Balance", opening_balance_val),
+            (9, "Closing Balance", closing_balance_val)
+        ]
+
+        for r_idx, label, val in side_meta_items:
+            cell_lbl = ws.cell(row=r_idx, column=9) # Column I
+            cell_val = ws.cell(row=r_idx, column=10) # Column J
+
+            cell_lbl.value = label
+            cell_lbl.font = label_meta_font
+            cell_lbl.border = thin_border
+            cell_lbl.alignment = Alignment(horizontal="left", vertical="center")
+
+            cell_val.value = val if val is not None else ""
+            cell_val.font = val_meta_font
+            cell_val.border = thin_border
+            if isinstance(val, (int, float)):
+                cell_val.number_format = '#,##0.00'
+                cell_val.alignment = Alignment(horizontal="right", vertical="center")
+            else:
+                cell_val.alignment = Alignment(horizontal="left", vertical="center")
+
+        # Enable Auto-filters on Header Row (Row 2, cols A to G)
         if len(transactions) > 0:
-            last_col_letter = get_column_letter(len(columns_order))
-            ws.auto_filter.ref = f"A2:{last_col_letter}{len(transactions) + 2}"
+            ws.auto_filter.ref = f"A2:G{len(transactions) + 2}"
 
-        # Auto-fit Column Widths
-        for col in ws.columns:
+        # Auto-fit Column Widths for Columns A to G
+        for col_idx in range(1, 8):
+            col_letter = get_column_letter(col_idx)
             max_len = 0
-            col_letter = get_column_letter(col[0].column)
-            for cell in col:
-                val = str(cell.value or '')
-                if len(val) > max_len:
-                    max_len = len(val)
+            for row in range(1, len(transactions) + 3):
+                cell = ws.cell(row=row, column=col_idx)
+                val_str = str(cell.value or '')
+                if len(val_str) > max_len:
+                    max_len = len(val_str)
             ws.column_dimensions[col_letter].width = min(max(max_len + 4, 12), 60)
 
-        # Set specific minimum width for empty Ledger column
-        ws.column_dimensions['D'].width = 20
+        # Explicit widths for Ledger, Empty Column H, and Side Metadata Columns I & J
+        ws.column_dimensions['D'].width = 20 # Ledger
+        ws.column_dimensions['H'].width = 4  # Blank separator column after Balance
+        ws.column_dimensions['I'].width = 18 # Labels (Bank Name, Opening Balance, etc.)
+        ws.column_dimensions['J'].width = 18 # Values
 
     wb.save(output_filepath)
-    logger.info(f"Excel workbook generated successfully with Red Debits and Green Credits: {output_filepath}")
+    logger.info(f"Excel workbook generated successfully with Side Metadata block and Ledger column: {output_filepath}")
     return output_filepath
 
 def generate_csv(transactions: List[Dict[str, Any]], output_filepath: str) -> str:
-    """Exports transactions list to CSV file with Ledger column and Subtotal row."""
+    """Exports transactions list to CSV file with Ledger column, Subtotal row and Side metadata."""
     total_debit = 0.0
     total_credit = 0.0
     for tx in transactions:
