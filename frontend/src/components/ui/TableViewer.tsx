@@ -220,31 +220,28 @@ export const TableViewer: React.FC<TableViewerProps> = ({
           <div className="flex items-center gap-1 bg-white border border-[#d2d0ce] rounded-lg p-0.5 text-xs shadow-2xs">
             <button
               onClick={() => setFilterStatus('ALL')}
-              className={`px-2 py-0.5 rounded font-medium text-[11px] ${
-                filterStatus === 'ALL'
+              className={`px-2 py-0.5 rounded font-medium text-[11px] ${filterStatus === 'ALL'
                   ? 'bg-[#107c41] text-white font-bold'
                   : 'text-neutral-600 hover:bg-neutral-100'
-              }`}
+                }`}
             >
               All ({transactions.length})
             </button>
             <button
               onClick={() => setFilterStatus('PASS')}
-              className={`px-2 py-0.5 rounded font-medium text-[11px] ${
-                filterStatus === 'PASS'
+              className={`px-2 py-0.5 rounded font-medium text-[11px] ${filterStatus === 'PASS'
                   ? 'bg-[#107c41] text-white font-bold'
                   : 'text-neutral-600 hover:bg-neutral-100'
-              }`}
+                }`}
             >
               Pass
             </button>
             <button
               onClick={() => setFilterStatus('WARNINGS')}
-              className={`px-2 py-0.5 rounded font-medium text-[11px] ${
-                filterStatus === 'WARNINGS'
+              className={`px-2 py-0.5 rounded font-medium text-[11px] ${filterStatus === 'WARNINGS'
                   ? 'bg-amber-600 text-white font-bold'
                   : 'text-neutral-600 hover:bg-neutral-100'
-              }`}
+                }`}
             >
               Review
             </button>
@@ -314,14 +311,14 @@ export const TableViewer: React.FC<TableViewerProps> = ({
               <th className="p-1.5 border-r border-[#cbd5e1] text-center font-mono text-neutral-400">
                 -
               </th>
-              {/* Above Debit: Sub Total Debit Value */}
-              <th className="p-1.5 border-r border-[#cbd5e1] text-right font-mono text-neutral-900 bg-[#e2e8f0]/60">
+              {/* Above Debit: Sub Total Debit Value (RED) */}
+              <th className="p-1.5 border-r border-[#cbd5e1] text-right font-mono font-bold text-red-600 bg-red-50/50">
                 {ledgerMetrics.totalDebit > 0
                   ? ledgerMetrics.totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                   : '-'}
               </th>
-              {/* Above Credit: Sub Total Credit Value */}
-              <th className="p-1.5 border-r border-[#cbd5e1] text-right font-mono text-emerald-800 bg-emerald-50">
+              {/* Above Credit: Sub Total Credit Value (GREEN) */}
+              <th className="p-1.5 border-r border-[#cbd5e1] text-right font-mono font-bold text-emerald-600 bg-emerald-50/50">
                 {ledgerMetrics.totalCredit > 0
                   ? ledgerMetrics.totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                   : '-'}
@@ -357,9 +354,8 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                   <th
                     key={header}
                     onClick={() => handleSort(header)}
-                    className={`p-2 border-r border-slate-600 cursor-pointer hover:bg-slate-700 transition whitespace-nowrap ${
-                      isNumeric ? 'text-right' : 'text-left'
-                    }`}
+                    className={`p-2 border-r border-slate-600 cursor-pointer hover:bg-slate-700 transition whitespace-nowrap ${isNumeric ? 'text-right' : 'text-left'
+                      }`}
                   >
                     <div className={`flex items-center gap-1 ${isNumeric ? 'justify-end' : 'justify-start'}`}>
                       <span>{header}</span>
@@ -400,17 +396,16 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                   <tr
                     key={globalIndex}
                     id={`tx-row-${globalIndex}`}
-                    className={`border-b border-[#e1dfdd] hover:bg-[#f3f9f4] transition-colors ${
-                      isHighlighted
+                    className={`border-b border-[#e1dfdd] hover:bg-[#f3f9f4] transition-colors ${isHighlighted
                         ? 'bg-amber-100/90'
                         : isSelected
-                        ? 'bg-[#e8f4ec]'
-                        : isFailed
-                        ? 'bg-rose-50/60'
-                        : index % 2 === 0
-                        ? 'bg-white'
-                        : 'bg-[#fafafa]'
-                    }`}
+                          ? 'bg-[#e8f4ec]'
+                          : isFailed
+                            ? 'bg-rose-50/60'
+                            : index % 2 === 0
+                              ? 'bg-white'
+                              : 'bg-[#fafafa]'
+                      }`}
                   >
                     {/* Left Sticky Excel Row Number */}
                     <td className="p-1.5 text-center bg-[#f3f2f1] border-r border-[#d2d0ce] font-mono text-[11px] font-bold text-neutral-500 select-none">
@@ -428,11 +423,10 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                     {/* Column A: Sr No. */}
                     <td
                       onClick={() => setSelectedCell({ row: globalIndex, colKey: 'Sr No.', colLetter: 'A' })}
-                      className={`p-2 text-center border-r border-[#e1dfdd] font-mono font-medium relative ${
-                        selectedCell?.row === globalIndex && selectedCell?.colKey === 'Sr No.'
+                      className={`p-2 text-center border-r border-[#e1dfdd] font-mono font-medium relative ${selectedCell?.row === globalIndex && selectedCell?.colKey === 'Sr No.'
                           ? 'ring-2 ring-[#107c41] ring-inset bg-white z-10'
                           : ''
-                      }`}
+                        }`}
                     >
                       {srNo}
                       {selectedCell?.row === globalIndex && selectedCell?.colKey === 'Sr No.' && (
@@ -451,7 +445,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                       const isLedger = header.toLowerCase() === 'ledger';
                       const isNumeric = ['debit', 'credit', 'balance', 'qty', 'price', 'amount', 'total'].includes(header.toLowerCase());
                       const isNumVal = typeof val === 'number' || (val !== undefined && val !== null && !isNaN(Number(val)) && val !== '' && !isNaN(parseFloat(val)));
-                      
+
                       let displayVal = String(val ?? '');
                       if (isNumVal && typeof val === 'number') {
                         displayVal = val.toLocaleString('en-IN', {
@@ -473,9 +467,8 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                           <td
                             key={header}
                             onClick={() => setSelectedCell({ row: globalIndex, colKey: header, colLetter })}
-                            className={`p-2 font-sans font-medium text-neutral-900 border-r border-[#e1dfdd] min-w-[260px] relative ${
-                              isCellFocused ? 'ring-2 ring-[#107c41] ring-inset bg-white z-10' : ''
-                            }`}
+                            className={`p-2 font-sans font-medium text-neutral-900 border-r border-[#e1dfdd] min-w-[260px] relative ${isCellFocused ? 'ring-2 ring-[#107c41] ring-inset bg-white z-10' : ''
+                              }`}
                           >
                             {isEditing ? (
                               <textarea
@@ -503,9 +496,8 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                           <td
                             key={header}
                             onClick={() => setSelectedCell({ row: globalIndex, colKey: header, colLetter })}
-                            className={`p-2 text-left font-sans text-neutral-600 border-r border-[#e1dfdd] min-w-[140px] relative ${
-                              isCellFocused ? 'ring-2 ring-[#107c41] ring-inset bg-white z-10' : ''
-                            }`}
+                            className={`p-2 text-left font-sans text-neutral-600 border-r border-[#e1dfdd] min-w-[140px] relative ${isCellFocused ? 'ring-2 ring-[#107c41] ring-inset bg-white z-10' : ''
+                              }`}
                           >
                             {isEditing ? (
                               <input
@@ -533,19 +525,16 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                         <td
                           key={header}
                           onClick={() => setSelectedCell({ row: globalIndex, colKey: header, colLetter })}
-                          className={`p-2 whitespace-nowrap border-r border-[#e1dfdd] relative ${
-                            isNumeric || isNumVal ? 'text-right font-mono' : 'text-left'
-                          } ${
-                            isCredit && isNumVal
-                              ? 'text-emerald-700 font-semibold bg-emerald-50/20'
+                          className={`p-2 whitespace-nowrap border-r border-[#e1dfdd] relative ${isNumeric || isNumVal ? 'text-right font-mono' : 'text-left'
+                            } ${isCredit && isNumVal
+                              ? 'text-emerald-600 font-bold bg-emerald-50/20'
                               : isDebit && isNumVal
-                              ? 'text-neutral-900 font-medium'
-                              : isBalance
-                              ? 'text-neutral-900 font-bold bg-neutral-50/40'
-                              : 'text-neutral-800'
-                          } ${
-                            isCellFocused ? 'ring-2 ring-[#107c41] ring-inset bg-white z-10' : ''
-                          }`}
+                                ? 'text-red-600 font-bold bg-red-50/20'
+                                : isBalance
+                                  ? 'text-neutral-900 font-bold bg-neutral-50/40'
+                                  : 'text-neutral-800'
+                            } ${isCellFocused ? 'ring-2 ring-[#107c41] ring-inset bg-white z-10' : ''
+                            }`}
                         >
                           {isEditing ? (
                             <input

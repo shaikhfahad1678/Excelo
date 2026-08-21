@@ -27,6 +27,10 @@ from backend.extractors.pipeline import execute_intelligent_pipeline
 from backend.validators.strict_validator import validate_and_enrich_transactions
 from backend.excel.writer import generate_excel_workbook, generate_csv
 from backend.utils.logger import logger
+import backend.config as config
+import boto3
+from botocore.exceptions import NoCredentialsError, ClientError
+
 
 FAILSAFE_WARNING_MSG = (
     "Fail Safe Warning — Action Required\n"
@@ -159,9 +163,136 @@ class StatementService:
             "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
 
+        # Upload file to Cloudflare R2 if credentials are configured
+        r2_result = self.upload_to_cloudflare_r2(file_path, saved_filename)
+        card["r2_uploaded"] = r2_result.get("success", False)
+        card["r2_key"] = r2_result.get("r2_key")
+        card["cloudflare_status"] = r2_result.get("status")
+        card["cloudflare_msg"] = r2_result.get("message")
+
         self.file_cards[file_id] = card
         self._save_json_disk(os.path.join(self.results_dir, f"{file_id}_card.json"), card)
         return card
+
+
+    def check_cloudflare_connection(self) -> Dict[str, Any]:
+        """
+        Checks connection to Cloudflare R2 bucket.
+        """
+        if not all([
+            config.CLOUDFLARE_R2_ACCOUNT_ID,
+            config.CLOUDFLARE_R2_ACCESS_KEY_ID,
+            config.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+            config.CLOUDFLARE_R2_BUCKET_NAME
+        ]):
+            return {
+                "configured": False,
+                "connected": False,
+                "status": "Not Configured",
+                "message": "Cloudflare R2 credentials missing in .env file. Please fill in ACCOUNT_ID, ACCESS_KEY, SECRET_KEY, and BUCKET_NAME."
+            }
+
+        try:
+            endpoint_url = f"https://{config.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+            s3_client = boto3.client(
+                service_name="s3",
+                endpoint_url=endpoint_url,
+                aws_access_key_id=config.CLOUDFLARE_R2_ACCESS_KEY_ID,
+                aws_secret_access_key=config.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+                region_name="auto"
+            )
+            # Test listing objects to verify connection
+            s3_client.list_objects_v2(Bucket=config.CLOUDFLARE_R2_BUCKET_NAME, MaxKeys=1)
+            return {
+                "configured": True,
+                "connected": True,
+                "status": "Connected",
+                "bucket": config.CLOUDFLARE_R2_BUCKET_NAME,
+                "message": f"Cloudflare R2 connected successfully! Bucket: '{config.CLOUDFLARE_R2_BUCKET_NAME}'"
+            }
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "ClientError")
+            error_msg = e.response.get("Error", {}).get("Message", str(e))
+            return {
+                "configured": True,
+                "connected": False,
+                "status": "Connection Error",
+                "message": f"Cloudflare R2 connection failed ({error_code}): {error_msg}"
+            }
+        except Exception as e:
+            return {
+                "configured": True,
+                "connected": False,
+                "status": "Connection Error",
+                "message": f"Cloudflare R2 connection error: {str(e)}"
+            }
+
+    def upload_to_cloudflare_r2(self, file_path: str, saved_filename: str) -> Dict[str, Any]:
+        """
+        Uploads a PDF file to Cloudflare R2 using the configured credentials.
+        The file will be stored in the 'pdf file/' folder.
+        Returns a dictionary with status, message, and r2_key.
+        """
+        if not all([
+            config.CLOUDFLARE_R2_ACCOUNT_ID,
+            config.CLOUDFLARE_R2_ACCESS_KEY_ID,
+            config.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+            config.CLOUDFLARE_R2_BUCKET_NAME
+        ]):
+            msg = "Cloudflare R2 credentials not configured in .env file (saved to local disk only)."
+            logger.warning(msg)
+            return {
+                "success": False,
+                "status": "Not Configured",
+                "message": msg,
+                "r2_key": None
+            }
+
+        try:
+            endpoint_url = f"https://{config.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+            s3_client = boto3.client(
+                service_name="s3",
+                endpoint_url=endpoint_url,
+                aws_access_key_id=config.CLOUDFLARE_R2_ACCESS_KEY_ID,
+                aws_secret_access_key=config.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+                region_name="auto"
+            )
+
+            object_key = f"pdf file/{saved_filename}"
+
+            logger.info(f"Uploading {file_path} to Cloudflare R2 bucket '{config.CLOUDFLARE_R2_BUCKET_NAME}' at '{object_key}'...")
+            
+            s3_client.upload_file(file_path, config.CLOUDFLARE_R2_BUCKET_NAME, object_key)
+            
+            msg = f"PDF file uploaded successfully to Cloudflare R2 under folder 'pdf file' ({object_key})."
+            logger.info(msg)
+            return {
+                "success": True,
+                "status": "Connected & Uploaded",
+                "message": msg,
+                "r2_key": object_key
+            }
+
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "ClientError")
+            error_msg = e.response.get("Error", {}).get("Message", str(e))
+            msg = f"Cloudflare R2 upload failed ({error_code}): {error_msg}"
+            logger.error(msg)
+            return {
+                "success": False,
+                "status": "Upload Failed",
+                "message": msg,
+                "r2_key": None
+            }
+        except Exception as e:
+            msg = f"Cloudflare R2 upload error: {str(e)}"
+            logger.error(msg)
+            return {
+                "success": False,
+                "status": "Upload Failed",
+                "message": msg,
+                "r2_key": None
+            }
 
     def extract_file(self, file_id: str, engine_override: Optional[str] = None) -> Dict[str, Any]:
         if file_id not in self.file_cards:
@@ -372,7 +503,7 @@ class StatementService:
                 sheet_map[fname_clean] = res["transactions"]
             generate_excel_workbook(sheet_map, filepath)
 
-        return filepath
+        return filename
 
     def get_settings(self) -> Dict[str, Any]:
         return self.settings

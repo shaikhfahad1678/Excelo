@@ -1,9 +1,9 @@
 """
 Professional Excel Generator (.xlsx) using openpyxl & pandas
 Layout:
-Row 1: Subtotal row (above Debit: sub total debit value; above Credit: sub total credit value)
-Row 2: Header row (Sr No., Date, Description, Ledger, Debit, Credit, Balance)
-Row 3+: Data rows with empty Ledger column, numeric formatting, thin borders, and auto-filters.
+Row 1: Subtotal row (above Debit: sub total debit value in RED; above Credit: sub total credit value in GREEN)
+Row 2: Header row (Sr No., Date, Description, Ledger, Debit, Credit, Balance) - Header colors unchanged
+Row 3+: Data rows with empty Ledger column, Debit values in RED, Credit values in GREEN, numeric formatting, thin borders, and auto-filters.
 """
 import re
 from typing import List, Dict, Any
@@ -32,9 +32,9 @@ def generate_excel_workbook(
     """
     Generates a professionally styled Excel workbook.
     Columns: Sr No., Date, Description, Ledger, Debit, Credit, Balance.
-    Row 1: Subtotal row with Debit subtotal value above Debit column and Credit subtotal value above Credit column.
-    Row 2: Header row.
-    Row 3..N+2: Transaction data rows.
+    Row 1: Subtotal row with Debit subtotal value (RED) and Credit subtotal value (GREEN).
+    Row 2: Header row (colors untouched).
+    Row 3..N+2: Transaction data rows with Debit in RED and Credit in GREEN.
     """
     wb = openpyxl.Workbook()
     wb.remove(wb.active) # Remove default sheet
@@ -44,6 +44,12 @@ def generate_excel_workbook(
     
     subtotal_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid") # Soft Slate Subtotal fill
     subtotal_font = Font(name="Calibri", size=11, bold=True, color="0F172A")
+    subtotal_debit_font = Font(name="Calibri", size=11, bold=True, color="DC2626") # Subtotal Debit in RED
+    subtotal_credit_font = Font(name="Calibri", size=11, bold=True, color="16A34A") # Subtotal Credit in GREEN
+    
+    regular_font = Font(name="Calibri", size=11, color="0F172A")
+    debit_font = Font(name="Calibri", size=11, bold=False, color="DC2626") # Debit Value in RED
+    credit_font = Font(name="Calibri", size=11, bold=False, color="16A34A") # Credit Value in GREEN
     
     alt_row_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
     
@@ -108,20 +114,24 @@ def generate_excel_workbook(
 
         for col_idx, col_name in enumerate(columns_order, 1):
             cell = ws.cell(row=1, column=col_idx)
-            cell.font = subtotal_font
             cell.fill = subtotal_fill
             cell.border = subtotal_border
-            if col_name in ["Debit", "Credit"]:
+            if col_name == "Debit":
+                cell.font = subtotal_debit_font
                 if cell.value != "":
                     cell.number_format = '#,##0.00'
-                    cell.alignment = Alignment(horizontal="right", vertical="center")
-                else:
-                    cell.alignment = Alignment(horizontal="right", vertical="center")
+                cell.alignment = Alignment(horizontal="right", vertical="center")
+            elif col_name == "Credit":
+                cell.font = subtotal_credit_font
+                if cell.value != "":
+                    cell.number_format = '#,##0.00'
+                cell.alignment = Alignment(horizontal="right", vertical="center")
             else:
+                cell.font = subtotal_font
                 cell.alignment = Alignment(horizontal="center", vertical="center")
 
         # ----------------------------------------------------
-        # ROW 2: Header Row
+        # ROW 2: Header Row (Unchanged styling)
         # ----------------------------------------------------
         ws.append(columns_order)
         for col_idx, col_name in enumerate(columns_order, 1):
@@ -132,7 +142,7 @@ def generate_excel_workbook(
             cell.border = thin_border
 
         # ----------------------------------------------------
-        # ROW 3+: Data Rows
+        # ROW 3+: Data Rows (Debit in RED, Credit in GREEN)
         # ----------------------------------------------------
         for row_idx, tx in enumerate(transactions, start=3):
             sr_num = tx.get("Sr No.") or global_sr_no
@@ -158,16 +168,37 @@ def generate_excel_workbook(
                     cell.fill = alt_row_fill
 
                 col_name = columns_order[col_idx - 1]
-                if col_name in ["Debit", "Credit", "Balance"]:
+                if col_name == "Debit":
+                    if cell.value is not None and isinstance(cell.value, (int, float)):
+                        cell.number_format = '#,##0.00'
+                        cell.alignment = Alignment(horizontal="right", vertical="center")
+                        cell.font = debit_font # Red color for Debit values
+                    else:
+                        cell.font = regular_font
+                        cell.alignment = Alignment(horizontal="center", vertical="center")
+                elif col_name == "Credit":
+                    if cell.value is not None and isinstance(cell.value, (int, float)):
+                        cell.number_format = '#,##0.00'
+                        cell.alignment = Alignment(horizontal="right", vertical="center")
+                        cell.font = credit_font # Green color for Credit values
+                    else:
+                        cell.font = regular_font
+                        cell.alignment = Alignment(horizontal="center", vertical="center")
+                elif col_name == "Balance":
+                    cell.font = regular_font
                     if cell.value is not None and isinstance(cell.value, (int, float)):
                         cell.number_format = '#,##0.00'
                         cell.alignment = Alignment(horizontal="right", vertical="center")
                     else:
                         cell.alignment = Alignment(horizontal="center", vertical="center")
                 elif col_name in ["Sr No.", "Date"]:
+                    cell.font = regular_font
                     cell.alignment = Alignment(horizontal="center", vertical="center")
                 elif col_name == "Ledger":
+                    cell.font = regular_font
                     cell.alignment = Alignment(horizontal="left", vertical="center")
+                else:
+                    cell.font = regular_font
 
         # Enable Auto-filters on Header Row (Row 2)
         if len(transactions) > 0:
@@ -188,7 +219,7 @@ def generate_excel_workbook(
         ws.column_dimensions['D'].width = 20
 
     wb.save(output_filepath)
-    logger.info(f"Excel workbook generated successfully with Subtotal Row and Ledger column: {output_filepath}")
+    logger.info(f"Excel workbook generated successfully with Red Debits and Green Credits: {output_filepath}")
     return output_filepath
 
 def generate_csv(transactions: List[Dict[str, Any]], output_filepath: str) -> str:
