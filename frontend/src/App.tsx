@@ -1,87 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/layout/Navbar';
-
 import { PdfExtractionView } from './components/views/PdfExtractionView';
-import { ScannedOcrView } from './components/views/ScannedOcrView';
-import { SettingsView } from './components/views/SettingsView';
-
-import type {
-  FileCard,
-  ExtractionResult,
-  Settings
-} from './types';
-
+import type { FileCard, ExtractionResult } from './types';
 import {
   uploadFiles,
-  generateSamplePdf,
   extractPdf,
   retryExtraction,
   generateExcel,
-  fetchSettings,
-  updateSettings,
   checkHealth,
-  fetchFileStatus
+  fetchFileStatus,
+  deleteFile
 } from './services/api';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<string>('extraction');
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(true);
-
-  // Application State
   const [files, setFiles] = useState<FileCard[]>([]);
   const [results, setResults] = useState<Record<string, ExtractionResult>>({});
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-
-  const [settings, setSettingsState] = useState<Settings>({
-    extraction_priority: 'Accuracy First',
-    preferred_engine: 'Auto Multi-Engine Pipeline',
-    confidence_threshold: 85.0,
-    validation_rules: {
-      arithmetic_check: true,
-      tolerance: 0.05,
-      duplicate_check: true
-    },
-    excel_output: {
-      include_summary_sheet: true,
-      styling: 'Corporate Blue',
-      format: 'xlsx'
-    },
-    log_retention_days: 30,
-    ocr_options: {
-      enable_ocr_fallback: true,
-      ocr_engine: 'Tesseract OCR (v5.3)'
-    }
-  });
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
 
-  const refreshData = async () => {
-    const local = localStorage.getItem('excelo_settings');
-    if (local) {
-      try {
-        const parsed = JSON.parse(local);
-        setSettingsState((prev) => ({ ...prev, ...parsed }));
-      } catch (e) {}
-    }
+  const refreshHealth = async () => {
     const health = await checkHealth();
     setIsBackendConnected(health);
-    if (health) {
-      try {
-        const s = await fetchSettings();
-        setSettingsState(s);
-        localStorage.setItem('excelo_settings', JSON.stringify(s));
-      } catch (err) {
-        console.error('Error fetching backend data:', err);
-      }
-    }
   };
 
   useEffect(() => {
-    refreshData();
+    refreshHealth();
   }, []);
 
   const handleUploadFiles = async (
@@ -99,55 +48,37 @@ export function App() {
 
     if (rawFiles.length === 0) return;
 
-    // Create optimistic temporary cards for instantaneous zero-latency UI feedback
-    const tempCards: FileCard[] = rawFiles.map((f, idx) => ({
-      id: `temp_${Date.now()}_${idx}`,
-      filename: f.name,
-      file_path: f.name,
-      pdf_type: 'Analyzing...',
-      pages: 1,
-      file_size: `${(f.size / (1024 * 1024)).toFixed(2)} MB`,
-      status: 'Ready',
-      extraction_method: 'Auto Multi-Engine Pipeline',
-      progress: 0,
-      confidence_score: 0.0,
-      validation_status: 'Pending',
-      detect_msg: 'Registering document...',
-      uploaded_at: new Date().toISOString()
-    }));
-
-    setFiles((prev) => [...prev, ...tempCards]);
+    const pdfOnly = rawFiles.filter((f) => f.name.toLowerCase().endsWith('.pdf'));
+    if (pdfOnly.length === 0) {
+      showToast('Only standard PDF statement files are supported.', 'error');
+      return;
+    }
 
     try {
-      const uploadedCards = await uploadFiles(rawFiles);
-      setFiles((prev) => [
-        ...prev.filter((f) => !f.id.startsWith('temp_')),
-        ...uploadedCards
-      ]);
-      showToast(`Registered ${uploadedCards.length} PDF statement(s).`);
+      setIsProcessing(true);
+      const newCards = await uploadFiles(pdfOnly);
+      setFiles((prev) => {
+        const existingIds = new Set(prev.map((c) => c.id));
+        const filtered = newCards.filter((c) => !existingIds.has(c.id));
+        return [...prev, ...filtered];
+      });
+      showToast(`Successfully imported ${newCards.length} PDF statement(s).`);
     } catch (err: any) {
-      setFiles((prev) => prev.filter((f) => !f.id.startsWith('temp_')));
-      showToast(err.message || 'Failed to upload files', 'error');
+      showToast(err.response?.data?.detail || 'Failed to upload files.', 'error');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  const handleLoadSample = async () => {
-    try {
-      const sampleCard = await generateSamplePdf();
-      setFiles((prev) => [sampleCard, ...prev]);
-      showToast('Loaded synthetic sample bank statement into workspace.');
-    } catch (err: any) {
-      showToast('Error generating sample PDF', 'error');
-    }
-  };
-
-  const handleRemoveFile = (id: string) => {
+  const handleRemoveFile = async (id: string) => {
+    await deleteFile(id);
     setFiles((prev) => prev.filter((f) => f.id !== id));
     setResults((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
+      const updated = { ...prev };
+      delete updated[id];
+      return updated;
     });
+    showToast('Document removed from workspace.');
   };
 
   const handleExtractFiles = async (
@@ -158,80 +89,57 @@ export function App() {
     if (fileIds.length === 0) return;
     setIsProcessing(true);
 
-    setFiles((prev) =>
-      prev.map((f) =>
-        fileIds.includes(f.id) ? { ...f, status: 'Extracting', progress: 40 } : f
-      )
-    );
-
-    // Dynamic status polling every 800ms to show live processing logs
-    const pollInterval = setInterval(async () => {
-      try {
-        const statuses = await Promise.all(
-          fileIds.map(async (id) => {
-            const status = await fetchFileStatus(id);
-            return { id, ...status };
-          })
-        );
-        setFiles((prev) =>
-          prev.map((f) => {
-            const polled = statuses.find((s) => s.id === f.id);
-            if (polled) {
-              return {
-                ...f,
-                progress: polled.progress || f.progress,
-                detect_msg: polled.detect_msg
-              };
-            }
-            return f;
-          })
-        );
-      } catch (e) {
-        console.error("Progress polling failed:", e);
-      }
-    }, 800);
-
-
     try {
-      const extractionResults = await extractPdf(fileIds, engineOverrides, engineOverride);
+      setFiles((prev) =>
+        prev.map((c) =>
+          fileIds.includes(c.id) ? { ...c, status: 'Extracting', progress: 30 } : c
+        )
+      );
+
+      const pollInterval = setInterval(async () => {
+        for (const fid of fileIds) {
+          try {
+            const st = await fetchFileStatus(fid);
+            setFiles((prev) =>
+              prev.map((c) =>
+                c.id === fid
+                  ? { ...c, progress: Math.max(c.progress, st.progress), detect_msg: st.detect_msg || c.detect_msg }
+                  : c
+              )
+            );
+          } catch (e) {}
+        }
+      }, 800);
+
+      const extractionOutputs = await extractPdf(fileIds, engineOverrides, engineOverride);
+      clearInterval(pollInterval);
 
       const newResultsMap: Record<string, ExtractionResult> = {};
-
-      extractionResults.forEach((res) => {
+      extractionOutputs.forEach((res) => {
         newResultsMap[res.file_id] = res;
       });
-
       setResults((prev) => ({ ...prev, ...newResultsMap }));
 
       setFiles((prev) =>
-        prev.map((f) => {
-          const res = newResultsMap[f.id];
-          if (res) {
-            return {
-              ...f,
-              status: res.success ? 'Completed' : 'Failed',
-              progress: 100,
-              confidence_score: res.confidence_score,
-              extraction_method: res.engine_used,
-              validation_status:
-                res.summary.failed_count === 0 ? 'OK' : 'Warnings'
-            };
-          }
-          return f;
+        prev.map((c) => {
+          const res = newResultsMap[c.id];
+          if (!res) return c;
+          return {
+            ...c,
+            status: res.success ? 'Completed' : 'Failed',
+            progress: 100,
+            confidence_score: res.confidence_score,
+            validation_status: res.summary?.is_valid ? 'OK' : 'Errors',
+            extraction_method: res.engine_used || c.extraction_method,
+            detect_msg: res.success ? `Extracted via ${res.engine_used}` : (res.error || 'Extraction failed')
+          };
         })
       );
 
-      showToast(`Extraction complete for ${extractionResults.length} statement(s).`);
-      refreshData();
+      showToast(`Extraction complete for ${extractionOutputs.length} document(s).`);
     } catch (err: any) {
-      showToast(err.message || 'Extraction execution failed', 'error');
-      setFiles((prev) =>
-        prev.map((f) =>
-          fileIds.includes(f.id) ? { ...f, status: 'Failed', progress: 100 } : f
-        )
-      );
+      showToast(err.response?.data?.detail || 'Extraction pipeline encountered an error.', 'error');
     } finally {
-      clearInterval(pollInterval);
       setIsProcessing(false);
     }
   };
@@ -239,64 +147,63 @@ export function App() {
   const handleRetryFile = async (fileId: string, preferredEngine: string) => {
     setIsProcessing(true);
     try {
-      const result = await retryExtraction(fileId, preferredEngine);
-      setResults((prev) => ({ ...prev, [fileId]: result }));
+      const res = await retryExtraction(fileId, preferredEngine);
+      setResults((prev) => ({ ...prev, [fileId]: res }));
       setFiles((prev) =>
-        prev.map((f) =>
-          f.id === fileId
+        prev.map((c) =>
+          c.id === fileId
             ? {
-                ...f,
-                status: 'Completed',
-                progress: 100,
-                confidence_score: result.confidence_score,
-                extraction_method: result.engine_used
+                ...c,
+                status: res.success ? 'Completed' : 'Failed',
+                confidence_score: res.confidence_score,
+                validation_status: res.summary?.is_valid ? 'OK' : 'Errors',
+                extraction_method: res.engine_used,
+                detect_msg: res.success ? `Re-extracted via ${res.engine_used}` : res.error
               }
-            : f
+            : c
         )
       );
-      showToast(`Re-extracted ${result.filename} using ${preferredEngine}.`);
-      refreshData();
+      showToast(`Statement re-extracted using ${preferredEngine}.`);
     } catch (err: any) {
-      showToast(err.message || 'Retry failed', 'error');
+      showToast(err.response?.data?.detail || 'Retry failed.', 'error');
     } finally {
       setIsProcessing(false);
     }
   };
 
   const handleGenerateExport = async (fileIds: string[], format: 'xlsx' | 'csv') => {
+    if (fileIds.length === 0) {
+      showToast('Please select at least one processed document to export.', 'error');
+      return;
+    }
+
     try {
-      const { download_url, filename } = await generateExcel(fileIds, format);
+      showToast(`Generating ${format.toUpperCase()} export...`);
+      const { blob, filename } = await generateExcel(fileIds, format);
+
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = download_url;
+      link.href = url;
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
-      link.remove();
-      showToast(`Exported ${filename} successfully!`);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to generate export file', 'error');
-    }
-  };
+      link.parentNode?.removeChild(link);
+      window.URL.revokeObjectURL(url);
 
-  const handleSaveSettings = async (updatedSettings: Settings) => {
-    try {
-      localStorage.setItem('excelo_settings', JSON.stringify(updatedSettings));
-      const saved = await updateSettings(updatedSettings);
-      setSettingsState(saved);
-      showToast('Settings & API Keys saved permanently.');
+      showToast(`Export downloaded: ${filename}`);
     } catch (err: any) {
-      showToast('Failed to save settings', 'error');
+      showToast(err.response?.data?.detail || 'Export generation failed.', 'error');
     }
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#fafafa] font-sans text-neutral-900">
+    <div className="flex flex-col min-h-screen bg-slate-50/50 text-slate-800 font-sans antialiased">
       {toast && (
         <div
-          className={`fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-xl border transition-all animate-bounce ${
-            toast.type === 'success'
-              ? 'bg-neutral-900 text-white border-neutral-800'
-              : 'bg-rose-600 text-white border-rose-500'
+          className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-lg border text-xs font-semibold flex items-center gap-2 animate-in fade-in slide-in-from-bottom-5 duration-200 ${
+            toast.type === 'error'
+              ? 'bg-rose-50 text-rose-800 border-rose-200'
+              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
           }`}
         >
           {toast.message}
@@ -304,38 +211,21 @@ export function App() {
       )}
 
       <Navbar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
         processingCount={isProcessing ? files.length : 0}
         isBackendConnected={isBackendConnected}
       />
 
       <main className="flex-1 overflow-y-auto px-6 py-8">
-        {activeTab === 'extraction' && (
-          <PdfExtractionView
-            files={files}
-            onUploadFiles={handleUploadFiles}
-            onLoadSample={handleLoadSample}
-            onRemoveFile={handleRemoveFile}
-            onExtractFiles={handleExtractFiles}
-            onRetryFile={handleRetryFile}
-            onGenerateExport={handleGenerateExport}
-            results={results}
-            isProcessing={isProcessing}
-          />
-        )}
-
-        {activeTab === 'scanned' && (
-          <ScannedOcrView />
-        )}
-
-        {activeTab === 'settings' && (
-          <SettingsView
-            settings={settings}
-            onSaveSettings={handleSaveSettings}
-            isBackendConnected={isBackendConnected}
-          />
-        )}
+        <PdfExtractionView
+          files={files}
+          onUploadFiles={handleUploadFiles}
+          onRemoveFile={handleRemoveFile}
+          onExtractFiles={handleExtractFiles}
+          onRetryFile={handleRetryFile}
+          onGenerateExport={handleGenerateExport}
+          results={results}
+          isProcessing={isProcessing}
+        />
       </main>
     </div>
   );

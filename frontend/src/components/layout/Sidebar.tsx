@@ -1,30 +1,10 @@
 import React from 'react';
-import {
-  FileSpreadsheet,
-  Settings as SettingsIcon,
-  ShieldCheck,
-  Scan
-} from 'lucide-react';
+import { FileSpreadsheet, ShieldCheck } from 'lucide-react';
 
-interface SidebarProps {
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
-}
-
-export const Sidebar: React.FC<SidebarProps> = ({
-  activeTab,
-  setActiveTab
-}) => {
-  const navItems = [
-    { id: 'extraction', label: 'PDF Extraction', icon: FileSpreadsheet },
-    { id: 'scanned', label: 'Scanned OCR Workspace', icon: Scan },
-    { id: 'settings', label: 'Settings', icon: SettingsIcon },
-  ];
-
+export const Sidebar: React.FC = () => {
   return (
     <aside className="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 select-none">
       <div>
-        {/* Logo & Brand Header */}
         <div className="h-16 flex items-center px-6 border-b border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center text-white">
@@ -38,30 +18,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
         </div>
-
-        {/* Navigation Menu */}
-        <nav className="p-3 space-y-1 mt-2">
-          <div className="px-3 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            Main Workspace
+        <nav className="p-3">
+          <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-blue-50 text-blue-700 font-semibold text-xs border border-blue-100">
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>PDF Statement Studio</span>
           </div>
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  isActive
-                    ? 'bg-blue-50 text-blue-700 font-semibold border border-blue-200/60'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                <Icon className={`w-4 h-4 ${isActive ? 'text-blue-600' : 'text-slate-400'}`} />
-                {item.label}
-              </button>
-            );
-          })}
         </nav>
       </div>
     </aside>

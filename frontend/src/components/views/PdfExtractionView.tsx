@@ -4,7 +4,6 @@ import {
   FileText,
   Play,
   FileSpreadsheet,
-  Sparkles,
   Activity,
   Trash2,
   TrendingDown,
@@ -17,7 +16,6 @@ import { TableViewer } from '../ui/TableViewer';
 interface PdfExtractionViewProps {
   files: FileCard[];
   onUploadFiles: (e: React.ChangeEvent<HTMLInputElement> | React.DragEvent) => void;
-  onLoadSample: () => void;
   onRemoveFile: (id: string) => void;
   onExtractFiles: (fileIds: string[], engineOverrides?: Record<string, string>, engineOverride?: string) => void;
   onRetryFile: (fileId: string, preferredEngine: string) => void;
@@ -29,7 +27,6 @@ interface PdfExtractionViewProps {
 export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
   files,
   onUploadFiles,
-  onLoadSample,
   onRemoveFile,
   onExtractFiles,
   onGenerateExport,
@@ -119,13 +116,6 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5">
-          <button
-            onClick={onLoadSample}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-neutral-50 text-neutral-700 hover:bg-neutral-100 border border-neutral-200 text-xs font-semibold transition"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-neutral-600" />
-            Load Sample Statement
-          </button>
           {files.length > 0 && (
             <button
               onClick={handleRunExtract}

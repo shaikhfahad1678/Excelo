@@ -65,30 +65,12 @@ class StatementService:
             os.makedirs(self.export_dir, exist_ok=True)
             os.makedirs(self.results_dir, exist_ok=True)
 
-        self.settings_file = os.path.join(base_dir, "data", "settings.json")
 
         self.file_cards: Dict[str, Dict[str, Any]] = {}
         self.extraction_results: Dict[str, Dict[str, Any]] = {}
         self.process_logs: List[Dict[str, Any]] = []
         self.history_records: List[Dict[str, Any]] = []
 
-        self.settings: Dict[str, Any] = {
-            "extraction_priority": "Accuracy First",
-            "preferred_engine": "Auto Multi-Engine Pipeline",
-            "confidence_threshold": 85.0,
-            "validation_rules": {
-                "arithmetic_check": True,
-                "tolerance": 0.05,
-                "duplicate_check": True
-            },
-            "excel_output": {
-                "include_summary_sheet": True,
-                "styling": "Corporate Blue",
-                "format": "xlsx"
-            },
-            "log_retention_days": 30
-        }
-        self._load_settings_from_disk()
         self._load_cards_and_results_from_disk()
 
     def _save_json_disk(self, path: str, data: Any):
@@ -294,6 +276,46 @@ class StatementService:
                 "r2_key": None
             }
 
+    def download_from_cloudflare_r2(self, file_id: str) -> Optional[str]:
+        """
+        Downloads a file from Cloudflare R2 if it is missing on the local serverless /tmp disk.
+        """
+        if not all([
+            config.CLOUDFLARE_R2_ACCOUNT_ID,
+            config.CLOUDFLARE_R2_ACCESS_KEY_ID,
+            config.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+            config.CLOUDFLARE_R2_BUCKET_NAME
+        ]):
+            return None
+
+        try:
+            endpoint_url = f"https://{config.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+            s3_client = boto3.client(
+                service_name="s3",
+                endpoint_url=endpoint_url,
+                aws_access_key_id=config.CLOUDFLARE_R2_ACCESS_KEY_ID,
+                aws_secret_access_key=config.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+                region_name="auto"
+            )
+
+            prefix = f"pdf file/{file_id}_"
+            response = s3_client.list_objects_v2(Bucket=config.CLOUDFLARE_R2_BUCKET_NAME, Prefix=prefix, MaxKeys=1)
+            contents = response.get("Contents", [])
+            if not contents:
+                return None
+
+            object_key = contents[0]["Key"]
+            saved_filename = object_key.replace("pdf file/", "")
+            local_path = os.path.join(self.upload_dir, saved_filename)
+
+            logger.info(f"Downloading serverless file from Cloudflare R2: {object_key} -> {local_path}")
+            s3_client.download_file(config.CLOUDFLARE_R2_BUCKET_NAME, object_key, local_path)
+            return local_path
+
+        except Exception as e:
+            logger.error(f"Failed to download file from Cloudflare R2 for file_id {file_id}: {e}")
+            return None
+
     def extract_file(self, file_id: str, engine_override: Optional[str] = None) -> Dict[str, Any]:
         if file_id not in self.file_cards:
             card_data = self._load_json_disk(os.path.join(self.results_dir, f"{file_id}_card.json"))
@@ -323,7 +345,7 @@ class StatementService:
                     }
                     self.file_cards[file_id] = card_data
                 else:
-                    raise KeyError(f"File ID {file_id} not found in workspace.")
+                    return {"file_id": file_id, "filename": file_id, "success": False, "error": "File session expired on serverless instance. Please re-upload your PDF statement.", "transactions": [], "summary": {"total_count": 0, "pass_count": 0, "failed_count": 0, "is_valid": False}}
 
         card = self.file_cards[file_id]
         card["status"] = "Extracting"
@@ -503,36 +525,7 @@ class StatementService:
                 sheet_map[fname_clean] = res["transactions"]
             generate_excel_workbook(sheet_map, filepath)
 
-        return filepath
-
-    def get_settings(self) -> Dict[str, Any]:
-        return self.settings
-
-    def update_settings(self, new_settings: Dict[str, Any]) -> Dict[str, Any]:
-        self.settings.update(new_settings)
-        self._save_settings_to_disk()
-        return self.settings
-
-    def _load_settings_from_disk(self):
-        try:
-            if os.path.exists(self.settings_file):
-                import json
-                with open(self.settings_file, "r", encoding="utf-8") as f:
-                    saved = json.load(f)
-                    if isinstance(saved, dict):
-                        self.settings.update(saved)
-                        logger.info("Loaded persistent settings from settings.json")
-        except Exception as e:
-            logger.warning(f"Could not load settings.json: {e}")
-
-    def _save_settings_to_disk(self):
-        try:
-            import json
-            with open(self.settings_file, "w", encoding="utf-8") as f:
-                json.dump(self.settings, f, indent=2)
-                logger.info("Saved persistent settings to settings.json")
-        except Exception as e:
-            logger.error(f"Could not save settings.json: {e}")
+        return filename
 
     def get_logs(self) -> List[Dict[str, Any]]:
         return self.process_logs

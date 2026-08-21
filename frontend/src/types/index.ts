@@ -12,6 +12,10 @@ export interface FileCard {
   validation_status: 'Pending' | 'OK' | 'Warnings' | 'Errors';
   detect_msg?: string;
   uploaded_at: string;
+  r2_uploaded?: boolean;
+  r2_key?: string;
+  cloudflare_status?: string;
+  cloudflare_msg?: string;
 }
 
 export interface Transaction {
@@ -75,52 +79,4 @@ export interface ExtractionResult {
   summary: Summary;
   diagnostics?: Diagnostics;
   error?: string;
-}
-
-export interface ProcessLog {
-  timestamp: string;
-  pdf_name: string;
-  pdf_type?: string;
-  processing_method: string;
-  fallback_methods_attempted?: string[];
-  pages_reprocessed: number;
-  rows_extracted?: number;
-  rows_reconstructed?: number;
-  rows_missing?: number;
-  validation_result?: string;
-  processing_duration: string;
-  confidence_score?: string;
-}
-
-export interface HistoryItem {
-  session_id: string;
-  file_id: string;
-  filename: string;
-  total_transactions: number;
-  total_debit: number;
-  total_credit: number;
-  engine: string;
-  confidence: number;
-  timestamp: string;
-}
-
-export interface Settings {
-  extraction_priority: string;
-  preferred_engine: string;
-  confidence_threshold: number;
-  validation_rules: {
-    arithmetic_check: boolean;
-    tolerance: number;
-    duplicate_check: boolean;
-  };
-  excel_output: {
-    include_summary_sheet: boolean;
-    styling: string;
-    format: string;
-  };
-  log_retention_days: number;
-  ocr_options: {
-    enable_ocr_fallback: boolean;
-    ocr_engine: string;
-  };
 }

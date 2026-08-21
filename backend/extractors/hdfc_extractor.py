@@ -165,13 +165,6 @@ def extract_hdfc_pdf(pdf_path: str) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"HDFC spatial digital pass encountered error: {e}. Trying OCR fallback...")
 
-    # Pass 2: OCR Fallback for Scanned HDFC Statements
-    try:
-        from backend.ocr.engine import ocr_engine
-        raw_ocr = ocr_engine.process_via_paddleocr(pdf_path) or ocr_engine.process_scanned_pdf(pdf_path).get("transactions", [])
-        if raw_ocr:
-            logger.info(f"HDFC Extractor returned {len(raw_ocr)} transactions via OCR fallback.")
-            return raw_ocr
     except Exception as e:
         logger.error(f"HDFC OCR fallback failed: {e}")
         

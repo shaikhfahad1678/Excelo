@@ -5,26 +5,30 @@ import os
 import sys
 from pathlib import Path
 
-# Add project root directory to sys.path for Vercel Serverless environment
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+# Add project root and backend directory to sys.path for Vercel Serverless environment
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent
+if str(_BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_ROOT))
 
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, File, UploadFile, HTTPException, Body
+from fastapi import FastAPI, APIRouter, File, UploadFile, HTTPException, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from backend.services.statement_service import statement_service
+from backend.utils.logger import logger
 
 app = FastAPI(
     title="Excelo Financial REST API",
     description="Enterprise Bank Statement Parsing, Extraction & Validation System",
-    version="2.0.0"
+    version="2.6.0"
 )
 
-# Enable CORS for React Frontend (typically running on Vite dev server)
+# Enable CORS for React Frontend (running on Vite or Vercel)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -39,7 +43,6 @@ class ExtractRequest(BaseModel):
     engine_override: Optional[str] = None
     engine_overrides: Optional[Dict[str, str]] = None
 
-
 class ValidateRequest(BaseModel):
     transactions: List[Dict[str, Any]]
     tolerance: Optional[float] = 0.05
@@ -52,28 +55,28 @@ class GenerateExcelRequest(BaseModel):
     file_ids: List[str]
     format: Optional[str] = "xlsx"
 
-@app.get("/api/health")
+# Router for all API endpoints
+router = APIRouter()
+
+@router.get("/health")
 def health_check():
     return {
         "status": "online",
         "service": "Excelo Statement Processing Engine",
         "engines": ["Camelot Lattice", "Camelot Stream", "pdfplumber Tables", "pdfplumber Words (Spatial)", "Tabula"],
-        "version": "2.0.0"
+        "version": "2.6.0"
     }
 
-@app.get("/api/cloudflare/status")
+@router.get("/cloudflare/status")
 def cloudflare_status():
     """
-    GET /api/cloudflare/status
     Checks Cloudflare R2 connection status and credential configuration.
     """
     return statement_service.check_cloudflare_connection()
 
-
-@app.post("/api/upload")
+@router.post("/upload")
 async def upload_files(files: List[UploadFile] = File(...)):
     """
-    POST /upload
     Handles single or multiple PDF uploads.
     """
     if not files:
@@ -92,12 +95,9 @@ async def upload_files(files: List[UploadFile] = File(...)):
 
     return {"status": "success", "files": uploaded_cards}
 
-
-
-@app.post("/api/extract")
+@router.post("/extract")
 def extract_pdf(req: ExtractRequest):
     """
-    POST /extract
     Executes extraction pipeline for specified files.
     """
     results = []
@@ -118,22 +118,19 @@ def extract_pdf(req: ExtractRequest):
             })
     return {"status": "success", "results": results}
 
-
-@app.post("/api/validate")
+@router.post("/validate")
 def validate_transactions_endpoint(req: ValidateRequest):
     """
-    POST /validate
     Re-evaluates balance arithmetic validation on transaction rows.
     """
     from backend.validators.strict_validator import validate_and_enrich_transactions
     validated_txs, summary = validate_and_enrich_transactions(req.transactions, tolerance=req.tolerance or 0.05)
     return {"status": "success", "transactions": validated_txs, "summary": summary}
 
-@app.post("/api/retry")
+@router.post("/retry")
 def retry_extraction(req: RetryRequest):
     """
-    POST /retry
-    Retries extraction using user's chosen fallback engine.
+    Retries extraction using chosen fallback engine.
     """
     try:
         res = statement_service.retry_file(req.file_id, req.preferred_engine)
@@ -141,10 +138,9 @@ def retry_extraction(req: RetryRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/generate-excel")
+@router.post("/generate-excel")
 def generate_excel_endpoint(req: GenerateExcelRequest):
     """
-    POST /generate-excel
     Generates Excel or CSV workbook.
     """
     try:
@@ -155,7 +151,7 @@ def generate_excel_endpoint(req: GenerateExcelRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/api/download/{filename}")
+@router.get("/download/{filename}")
 def download_file(filename: str):
     clean_filename = os.path.basename(filename)
     filepath = os.path.join(statement_service.export_dir, clean_filename)
@@ -165,28 +161,16 @@ def download_file(filename: str):
     media_type = "text/csv" if clean_filename.endswith(".csv") else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     return FileResponse(filepath, media_type=media_type, filename=clean_filename)
 
-@app.get("/api/history")
+@router.get("/history")
 def get_history():
-    """
-    GET /history
-    """
     return {"status": "success", "history": statement_service.get_history()}
 
-@app.get("/api/logs")
+@router.get("/logs")
 def get_logs():
-    """
-    GET /logs
-    """
     return {"status": "success", "logs": statement_service.get_logs()}
 
-
-
-@app.get("/api/files/{file_id}/status")
+@router.get("/files/{file_id}/status")
 def get_file_status(file_id: str):
-    """
-    GET /files/{file_id}/status
-    Fetches live progress and status messages during extraction.
-    """
     card = statement_service.get_card(file_id)
     if not card:
         return {"status": "not_found", "progress": 100, "detect_msg": "Processing"}
@@ -196,22 +180,18 @@ def get_file_status(file_id: str):
         "detect_msg": card.get("detect_msg", "")
     }
 
-@app.delete("/api/files/{file_id}")
+@router.delete("/files/{file_id}")
 def delete_file_endpoint(file_id: str):
-    """
-    DELETE /files/{file_id}
-    Deletes uploaded PDF file physically from disk and workspace memory.
-    """
     success = statement_service.delete_file(file_id)
     return {"status": "success" if success else "not_found"}
 
-
-
-from fastapi import Request
-from fastapi.responses import JSONResponse
+# Mount router for both '/api' prefixed requests and root requests (handles all Vercel path rewrite modes)
+app.include_router(router, prefix="/api")
+app.include_router(router)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Global server error on {request.url}: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
         content={"status": "error", "detail": str(exc), "message": f"Server Error: {str(exc)}"}
