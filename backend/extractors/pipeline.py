@@ -11,6 +11,7 @@ Routes PDF statements exclusively to the supported bank statement special extrac
 from typing import List, Dict, Any, Tuple
 from backend.extractors.pdf_classifier import (
     classify_pdf_type,
+    TYPE_PNB,
     TYPE_HDFC,
     TYPE_INDUSIND,
     TYPE_AXIS,
@@ -49,7 +50,10 @@ def execute_intelligent_pipeline(pdf_path: str) -> Tuple[List[Dict[str, Any]], s
     pdf_type, class_meta = classify_pdf_type(pdf_path)
     logger.info(f"Initiating pipeline for [{pdf_path}] classified as: {pdf_type}")
 
-    if pdf_type == TYPE_UNION:
+    if pdf_type == TYPE_PNB:
+        from backend.extractors.candidate_extractors import run_pnb_extractor
+        candidate_sequence = [("PNB Bank Special Extractor", run_pnb_extractor)]
+    elif pdf_type == TYPE_UNION:
         from backend.extractors.candidate_extractors import run_union_extractor
         candidate_sequence = [("Union Bank Special Extractor", run_union_extractor)]
     elif pdf_type == TYPE_YESBANK:

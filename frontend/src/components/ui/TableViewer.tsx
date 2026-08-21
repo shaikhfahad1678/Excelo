@@ -38,49 +38,22 @@ export const TableViewer: React.FC<TableViewerProps> = ({
   const [editingRowData, setEditingRowData] = useState<Transaction | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
 
-  // Dynamically calculate column headers from data keys
+  // Standard requested columns: Date, Description, Ledger, Debit, Credit, Balance
   const tableHeaders = useMemo(() => {
-    if (transactions.length === 0) return [];
-    
-    const keys = new Set<string>();
-    transactions.forEach((tx) => {
-      Object.keys(tx).forEach((k) => {
-        if (
-          k !== 'Currency' && 
-          k !== 'Validation Status' && 
-          k !== 'Sr No.' && 
-          k !== 'Sr. No.' && 
-          k !== 'Sr No' && 
-          k !== 'S.No.' && 
-          k !== 'S.No' && 
-          k !== 'Confidence' &&
-          k !== 'Validation Details'
-        ) {
-          keys.add(k);
-        }
-      });
-    });
-
-    const stdKeys = ['Date', 'Description', 'Cheque No.', 'Ref No.', 'Debit', 'Credit', 'Balance'];
-    const isStandard = Array.from(keys).every((k) => stdKeys.includes(k));
-
-    if (isStandard) {
-      return stdKeys.filter((k) => keys.has(k) || k === 'Cheque No.' || k === 'Ref No.');
-    }
-    
-    return Array.from(keys);
-  }, [transactions]);
+    return ['Date', 'Description', 'Ledger', 'Debit', 'Credit', 'Balance'];
+  }, []);
 
   // Excel column letters helper
-  const columnLetters = useMemo(() => {
-    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M'];
-    const mapping: Record<string, string> = { 'Sr No.': 'A' };
-    tableHeaders.forEach((h, idx) => {
-      mapping[h] = letters[idx + 1] || String.fromCharCode(66 + idx);
-    });
-    mapping['Validation Status'] = letters[tableHeaders.length + 1] || 'Z';
-    return mapping;
-  }, [tableHeaders]);
+  const columnLetters: Record<string, string> = {
+    'Sr No.': 'A',
+    'Date': 'B',
+    'Description': 'C',
+    'Ledger': 'D',
+    'Debit': 'E',
+    'Credit': 'F',
+    'Balance': 'G',
+    'Validation Status': 'H'
+  };
 
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 25;
@@ -123,7 +96,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({
     return sortedData.slice(start, start + pageSize);
   }, [sortedData, currentPage]);
 
-  // Calculate quick summary metrics for Excel status bar
+  // Calculate quick summary metrics for Excel subtotal row and status bar
   const ledgerMetrics = useMemo(() => {
     let totalDebit = 0;
     let totalCredit = 0;
@@ -195,7 +168,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({
   }, [selectedCell, sortedData]);
 
   const activeCellCoord = selectedCell
-    ? `${selectedCell.colLetter}${selectedCell.row + 2}`
+    ? `${selectedCell.colLetter}${selectedCell.row + 3}`
     : 'A1';
 
   return (
@@ -293,10 +266,10 @@ export const TableViewer: React.FC<TableViewerProps> = ({
       {/* Excel Spreadsheet Grid Table */}
       <div className="overflow-auto relative max-h-[600px] border-b border-[#e1dfdd] bg-white">
         <table className="w-full text-left border-collapse text-xs font-sans">
-          {/* Top Column Letters Row (A, B, C, D, E...) */}
+          {/* Top Sticky Header Section */}
           <thead className="sticky top-0 z-20 bg-[#f3f2f1] text-[#605e5c] select-none">
+            {/* Top Column Letters Row (A, B, C, D, E, F, G) */}
             <tr className="border-b border-[#d2d0ce]">
-              {/* Top-Left Select All Corner Cell */}
               <th className="w-10 bg-[#e1dfdd] border-r border-b border-[#c8c6c4] text-center p-1 font-mono text-[10px] text-neutral-500">
                 <input
                   type="checkbox"
@@ -324,14 +297,54 @@ export const TableViewer: React.FC<TableViewerProps> = ({
               </th>
             </tr>
 
-            {/* Sub-Header Row: Actual Column Titles with Filter Dropdowns */}
-            <tr className="bg-[#e8f4ec] text-[#0e5c30] font-bold border-b-2 border-[#107c41] shadow-2xs">
-              <th className="p-2 border-r border-[#c8c6c4] text-center bg-[#dbe8df] text-neutral-700 text-[11px]">
-                #
+            {/* Subtotal Row (Row 1 above column headers): shows sub total debit and credit values */}
+            <tr className="bg-[#f1f5f9] text-neutral-800 font-bold border-b border-[#cbd5e1] shadow-2xs text-[11px]">
+              <th className="p-1.5 border-r border-[#cbd5e1] text-center bg-[#e2e8f0] text-neutral-500 font-mono text-[10px]">
+                1
+              </th>
+              <th className="p-1.5 border-r border-[#cbd5e1] text-center font-mono text-neutral-400">
+                -
+              </th>
+              <th className="p-1.5 border-r border-[#cbd5e1] text-center font-mono text-neutral-400">
+                -
+              </th>
+              <th className="p-1.5 border-r border-[#cbd5e1] text-center font-mono text-neutral-400">
+                -
+              </th>
+              <th className="p-1.5 border-r border-[#cbd5e1] text-center font-mono text-neutral-400">
+                -
+              </th>
+              {/* Above Debit: Sub Total Debit Value */}
+              <th className="p-1.5 border-r border-[#cbd5e1] text-right font-mono text-neutral-900 bg-[#e2e8f0]/60">
+                {ledgerMetrics.totalDebit > 0
+                  ? ledgerMetrics.totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                  : '-'}
+              </th>
+              {/* Above Credit: Sub Total Credit Value */}
+              <th className="p-1.5 border-r border-[#cbd5e1] text-right font-mono text-emerald-800 bg-emerald-50">
+                {ledgerMetrics.totalCredit > 0
+                  ? ledgerMetrics.totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                  : '-'}
+              </th>
+              <th className="p-1.5 border-r border-[#cbd5e1] text-center font-mono text-neutral-400">
+                -
+              </th>
+              <th className="p-1.5 border-r border-[#cbd5e1] text-center font-mono text-neutral-400">
+                -
+              </th>
+              <th className="p-1.5 border-r border-[#cbd5e1] text-center font-mono text-neutral-400">
+                -
+              </th>
+            </tr>
+
+            {/* Column Titles Header Row with Filter Dropdowns */}
+            <tr className="bg-[#1e293b] text-white font-bold border-b-2 border-neutral-900 shadow-2xs text-[11px]">
+              <th className="p-2 border-r border-slate-600 text-center bg-slate-800 text-slate-400 font-mono text-[10px]">
+                2
               </th>
               <th
                 onClick={() => handleSort('Sr No.')}
-                className="p-2 border-r border-[#c3d9cb] text-center cursor-pointer hover:bg-[#d8edd0] transition whitespace-nowrap"
+                className="p-2 border-r border-slate-600 text-center cursor-pointer hover:bg-slate-700 transition whitespace-nowrap"
               >
                 <div className="flex items-center justify-center gap-1">
                   <span>Sr No.</span>
@@ -344,7 +357,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                   <th
                     key={header}
                     onClick={() => handleSort(header)}
-                    className={`p-2 border-r border-[#c3d9cb] cursor-pointer hover:bg-[#d8edd0] transition whitespace-nowrap ${
+                    className={`p-2 border-r border-slate-600 cursor-pointer hover:bg-slate-700 transition whitespace-nowrap ${
                       isNumeric ? 'text-right' : 'text-left'
                     }`}
                   >
@@ -355,10 +368,10 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                   </th>
                 );
               })}
-              <th className="p-2 border-r border-[#c3d9cb] text-center whitespace-nowrap">
+              <th className="p-2 border-r border-slate-600 text-center whitespace-nowrap">
                 Validation Status
               </th>
-              <th className="p-2 border-r border-[#c3d9cb] text-center whitespace-nowrap">
+              <th className="p-2 border-r border-slate-600 text-center whitespace-nowrap">
                 Action
               </th>
             </tr>
@@ -381,7 +394,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                 const isFailed = status === 'FAILED VALIDATION' || status === 'BALANCE MISMATCH';
                 const isEditing = editingRowIndex === globalIndex;
                 const srNo = row['Sr No.'] || globalIndex + 1;
-                const excelRowNum = globalIndex + 2;
+                const excelRowNum = globalIndex + 3; // Row 1 is subtotal, Row 2 is header
 
                 return (
                   <tr
@@ -435,6 +448,7 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                       const isDebit = header.toLowerCase() === 'debit';
                       const isCredit = header.toLowerCase() === 'credit';
                       const isBalance = header.toLowerCase() === 'balance';
+                      const isLedger = header.toLowerCase() === 'ledger';
                       const isNumeric = ['debit', 'credit', 'balance', 'qty', 'price', 'amount', 'total'].includes(header.toLowerCase());
                       const isNumVal = typeof val === 'number' || (val !== undefined && val !== null && !isNaN(Number(val)) && val !== '' && !isNaN(parseFloat(val)));
                       
@@ -476,6 +490,37 @@ export const TableViewer: React.FC<TableViewerProps> = ({
                               />
                             ) : (
                               val || '-'
+                            )}
+                            {isCellFocused && !isEditing && (
+                              <div className="w-1.5 h-1.5 bg-[#107c41] absolute -bottom-0.5 -right-0.5 border border-white" />
+                            )}
+                          </td>
+                        );
+                      }
+
+                      if (isLedger) {
+                        return (
+                          <td
+                            key={header}
+                            onClick={() => setSelectedCell({ row: globalIndex, colKey: header, colLetter })}
+                            className={`p-2 text-left font-sans text-neutral-600 border-r border-[#e1dfdd] min-w-[140px] relative ${
+                              isCellFocused ? 'ring-2 ring-[#107c41] ring-inset bg-white z-10' : ''
+                            }`}
+                          >
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={editingRowData?.[header] || ''}
+                                placeholder="Enter Ledger Account"
+                                onChange={(e) =>
+                                  setEditingRowData((prev) =>
+                                    prev ? { ...prev, [header]: e.target.value } : null
+                                  )
+                                }
+                                className="px-1.5 py-0.5 bg-white border border-[#107c41] rounded text-xs w-full focus:outline-none"
+                              />
+                            ) : (
+                              val || <span className="text-neutral-300 italic">Empty</span>
                             )}
                             {isCellFocused && !isEditing && (
                               <div className="w-1.5 h-1.5 bg-[#107c41] absolute -bottom-0.5 -right-0.5 border border-white" />
@@ -587,11 +632,11 @@ export const TableViewer: React.FC<TableViewerProps> = ({
           </span>
           <span className="text-neutral-300">|</span>
           <span>
-            <strong>Total Debit:</strong> ₹{ledgerMetrics.totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            <strong>Subtotal Debit:</strong> ₹{ledgerMetrics.totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </span>
           <span className="text-neutral-300">|</span>
           <span>
-            <strong>Total Credit:</strong> ₹{ledgerMetrics.totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            <strong>Subtotal Credit:</strong> ₹{ledgerMetrics.totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </span>
           <span className="text-neutral-300">|</span>
           <span className="text-[#107c41] font-bold">

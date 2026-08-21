@@ -1,6 +1,7 @@
 """
 Bank Statement Candidate Extractor Module
 Contains individual specialized candidate extractors for:
+- PNB Bank Statement
 - Union Bank Statement
 - Yes Bank Statement
 - HDFC Bank Statement
@@ -10,6 +11,14 @@ Contains individual specialized candidate extractors for:
 """
 from typing import List, Dict, Any
 from backend.utils.logger import logger
+
+def run_pnb_extractor(pdf_path: str) -> List[Dict[str, Any]]:
+    try:
+        from backend.extractors.pnb_extractor import run_pnb_extractor as ext
+        return ext(pdf_path)
+    except Exception as e:
+        logger.error(f"PNB Bank extractor failed: {e}")
+        return []
 
 def run_union_extractor(pdf_path: str) -> List[Dict[str, Any]]:
     try:

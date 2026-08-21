@@ -67,6 +67,7 @@ export const PdfExtractionView: React.FC<PdfExtractionViewProps> = ({
 
   const availableEngines = [
     'Auto Multi-Engine Pipeline',
+    'PNB Bank Statement',
     'Union Bank Statement',
     'Yes Bank Statement',
     'HDFC Bank Statement',

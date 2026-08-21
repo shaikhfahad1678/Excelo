@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 from backend.extractors.pdf_classifier import classify_pdf_type
 from backend.extractors.candidate_extractors import (
+    run_pnb_extractor,
     run_union_extractor,
     run_yesbank_extractor,
     run_hdfc_extractor,
@@ -81,10 +82,6 @@ class StatementService:
                 "styling": "Corporate Blue",
                 "format": "xlsx"
             },
-            "batch_processing": {
-                "max_concurrent": 4,
-                "auto_export": False
-            },
             "log_retention_days": 30
         }
         self._load_settings_from_disk()
@@ -136,6 +133,7 @@ class StatementService:
         pdf_type, meta = classify_pdf_type(file_path)
 
         supported_types = [
+            "PNB Bank Statement",
             "Union Bank Statement",
             "Yes Bank Statement",
             "HDFC Bank Statement",
@@ -209,7 +207,11 @@ class StatementService:
         summary = {}
 
         try:
-            if selected_engine == "Union Bank Statement" or (selected_engine == "Auto Multi-Engine Pipeline" and card.get("pdf_type") == "Union Bank Statement"):
+            if selected_engine == "PNB Bank Statement" or (selected_engine == "Auto Multi-Engine Pipeline" and card.get("pdf_type") == "PNB Bank Statement"):
+                raw = run_pnb_extractor(pdf_path)
+                validated_txs, summary = validate_and_enrich_transactions(raw)
+                engine_used = "PNB Bank Statement Special Extractor"
+            elif selected_engine == "Union Bank Statement" or (selected_engine == "Auto Multi-Engine Pipeline" and card.get("pdf_type") == "Union Bank Statement"):
                 raw = run_union_extractor(pdf_path)
                 validated_txs, summary = validate_and_enrich_transactions(raw)
                 engine_used = "Union Bank Statement Special Extractor"
@@ -370,7 +372,7 @@ class StatementService:
                 sheet_map[fname_clean] = res["transactions"]
             generate_excel_workbook(sheet_map, filepath)
 
-        return filename
+        return filepath
 
     def get_settings(self) -> Dict[str, Any]:
         return self.settings
